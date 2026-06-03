@@ -293,7 +293,7 @@ function getBetTotals(session: any) {
 
 function formatBetStatus(sessionNumber: number, secondsLeft: number, totals: any) {
   let msg =
-    `*⏳ Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
+    `*Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
     `*🔵 TÀI: ${formatNumber(totals.tai)}*\n` +
     `*🔴 XỈU: ${formatNumber(totals.xiu)}*\n\n` +
     `*⚪️ CHẴN: ${formatNumber(totals.chan)}*\n` +
@@ -1676,7 +1676,7 @@ async function handlePrivateBet(msg: TelegramBot.Message, groupChatId: number, s
 
   // Xác nhận riêng cho người chơi
   await bot.sendMessage(chatId,
-    `✅ *Đặt cược thành công (ẩn danh)*\n\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – ${formatNumber(amount)}\n💰 Số dư còn lại: ${formatNumber(newBal)}`,
+    `👤 *Đặt thành công *\n\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – ${formatNumber(amount)(Ẩn danh)}\nSố dư còn lại: ${formatNumber(newBal)}`,
     { parse_mode: "Markdown" }
   );
   return true;
