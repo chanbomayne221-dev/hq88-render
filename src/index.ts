@@ -30,13 +30,15 @@ if (!token) {
   process.exit(1);
 }
 
-const bot = startBot();
-if (!bot) {
-  logger.error("Bot không khởi động được.");
-  process.exit(1);
-}
-
-logger.info("🚀 Bot đang chạy 24/7 bằng polling…");
+let bot: Awaited<ReturnType<typeof startBot>> = null;
+(async () => {
+  bot = await startBot();
+  if (!bot) {
+    logger.error("Bot không khởi động được.");
+    process.exit(1);
+  }
+  logger.info("🚀 Bot đang chạy 24/7 bằng polling…");
+})();
 
 // ── HTTP health-check server (BẮT BUỘC cho Render web service) ──────────
 // Render scan port từ biến PORT. Nếu không bind, service sẽ bị mark "failed".

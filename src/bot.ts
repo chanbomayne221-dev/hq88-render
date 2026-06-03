@@ -99,8 +99,8 @@ let historyChannelId: number | null = (() => {
     { name: "Thu Hà 🌸",    telegram_id: -1002, min_bet: 5000,  max_bet: 50000, bet_types: "tai,xiu" },
   ];
   for (const b of defaults) {
-    db.prepare("INSERT INTO users (telegram_id, first_name, balance, is_fake_bot) VALUES (?, ?, 50000000, 1) ON CONFLICT DO NOTHING").run(b.telegram_id, b.name);
-    db.prepare("INSERT INTO fake_bots (name, telegram_id, min_bet, max_bet, bet_types) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(b.name, b.telegram_id, b.min_bet, b.max_bet, b.bet_types);
+    db.prepare("INSERT OR IGNORE INTO users (telegram_id, first_name, balance, is_fake_bot) VALUES (?, ?, 50000000, 1)").run(b.telegram_id, b.name);
+    db.prepare("INSERT OR IGNORE INTO fake_bots (name, telegram_id, min_bet, max_bet, bet_types) VALUES (?, ?, ?, ?, ?)").run(b.name, b.telegram_id, b.min_bet, b.max_bet, b.bet_types);
   }
 })();
 
@@ -143,7 +143,7 @@ function syncVipLevel(u: any) {
 }
 
 function getOrCreateUser(telegramId: number, firstName?: string, username?: string) {
-  const res = db.prepare(`INSERT INTO users (telegram_id, first_name, username, balance) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`).run(telegramId, firstName ?? null, username ?? null, SIGNUP_BONUS);
+  const res = db.prepare(`INSERT OR IGNORE INTO users (telegram_id, first_name, username, balance) VALUES (?, ?, ?, ?)`).run(telegramId, firstName ?? null, username ?? null, SIGNUP_BONUS);
   if ((res as any).changes > 0) {
     const u = db.prepare("SELECT id, balance FROM users WHERE telegram_id = ?").get(telegramId) as any;
     recordTransaction({ userId: u.id, type: "gift", amount: SIGNUP_BONUS, fee: 0, balanceBefore: 0, balanceAfter: SIGNUP_BONUS, note: "Tặng 2.000 khi đăng ký" });
@@ -293,14 +293,14 @@ function getBetTotals(session: any) {
 
 function formatBetStatus(sessionNumber: number, secondsLeft: number, totals: any) {
   let msg =
-    `*Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
+    `*⏳ Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
     `*🔵 TÀI: ${formatNumber(totals.tai)}*\n` +
     `*🔴 XỈU: ${formatNumber(totals.xiu)}*\n\n` +
     `*⚪️ CHẴN: ${formatNumber(totals.chan)}*\n` +
     `*⚫️ LẺ: ${formatNumber(totals.le)}*`;
   const hasCombo = totals.tc > 0 || totals.tl > 0 || totals.xc > 0 || totals.xl > 0;
   if (hasCombo) {
-    msg += `\n\n`;
+    msg += `\n\n**`;
     if (totals.tc > 0) msg += `\n*  TC: ${formatNumber(totals.tc)}*`;
     if (totals.tl > 0) msg += `\n*  TL: ${formatNumber(totals.tl)}*`;
     if (totals.xc > 0) msg += `\n*  XC: ${formatNumber(totals.xc)}*`;
@@ -586,7 +586,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   session.timers.forEach(clearTimeout);
 
   if (!hasBets(session)) {
-    db.prepare(`UPDATE game_sessions SET status='done', ended_at=NOW() WHERE id=?`).run(sessionId);
+    db.prepare(`UPDATE game_sessions SET status='done', ended_at=datetime('now') WHERE id=?`).run(sessionId);
     setTimeout(() => startSession(chatId, true), 2_000);
     return;
   }
@@ -670,7 +670,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   const isTai = total >= 11;
   const isChan = total % 2 === 0;
 
-  db.prepare(`UPDATE game_sessions SET dice1=?, dice2=?, dice3=?, total=?, result_tai=?, result_chan=?, is_triple=?, status='done', ended_at=NOW() WHERE id=?`)
+  db.prepare(`UPDATE game_sessions SET dice1=?, dice2=?, dice3=?, total=?, result_tai=?, result_chan=?, is_triple=?, status='done', ended_at=datetime('now') WHERE id=?`)
     .run(d1, d2, d3, total, isTai ? 1 : 0, isChan ? 1 : 0, isTriple ? 1 : 0, sessionId);
 
   let totalWinPayout = 0;
@@ -1970,7 +1970,7 @@ async function sendAdminStats(chatId: number) {
   const totalWin = (db.prepare("SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE type='win'").get() as any).s;
   const totalSessions = (db.prepare("SELECT COUNT(*) as c FROM game_sessions WHERE status='done'").get() as any).c;
   const activeGifts = (db.prepare("SELECT COUNT(*) as c FROM giftcodes WHERE is_active=1").get() as any).c;
-  const todayTx = (db.prepare("SELECT COUNT(*) as c FROM transactions WHERE substr(created_at,1,10)=to_char(CURRENT_DATE,'YYYY-MM-DD')").get() as any).c;
+  const todayTx = (db.prepare("SELECT COUNT(*) as c FROM transactions WHERE date(created_at)=date('now')").get() as any).c;
   const totalBalance = (db.prepare("SELECT COALESCE(SUM(balance),0) as s FROM users").get() as any).s;
   await bot.sendMessage(chatId,
     `📊 *THỐNG KÊ HỆ THỐNG*\n\n👥 Tổng user: *${formatNumber(totalUsers)}* (bị khóa: ${blockedUsers})\n💰 Tổng số dư hệ thống: *${formatNumber(totalBalance)}*\n\n📥 Tổng nạp: *${formatNumber(totalDeposit)}*\n📤 Tổng rút: *${formatNumber(totalWithdraw)}*\n🎮 Tổng cược: *${formatNumber(totalBet)}*\n🏆 Tổng trả thưởng: *${formatNumber(totalWin)}*\n📈 Lợi nhuận nhà cái: *${formatNumber(totalBet - totalWin)}*\n\n🎲 Tổng phiên game: *${formatNumber(totalSessions)}*\n🎁 Giftcode đang hoạt động: *${activeGifts}*\n📋 Giao dịch hôm nay: *${todayTx}*`,
@@ -2072,12 +2072,44 @@ async function sendAdminGameSessions(chatId: number) {
 }
 
 // ─── startBot ─────────────────────────────────────────────────────────────────
-export function startBot(): TelegramBot | null {
+export async function startBot(): Promise<TelegramBot | null> {
   const token = process.env["TELEGRAM_BOT_TOKEN"];
   if (!token) { logger.warn("TELEGRAM_BOT_TOKEN không được cấu hình, bỏ qua khởi động bot"); return null; }
 
-  bot = new TelegramBot(token, { polling: true });
+  // Khởi tạo KHÔNG auto-poll để chủ động xoá webhook + drop pending updates
+  // trước khi bắt đầu polling. Tránh lỗi 409 Conflict khi Render redeploy
+  // hoặc có instance cũ còn đang giữ getUpdates.
+  bot = new TelegramBot(token, { polling: false });
   setBotInstance(bot);
+
+  // Xoá webhook + drop các update đang chờ (nếu có)
+  try {
+    await bot.deleteWebHook({ drop_pending_updates: true } as any);
+    logger.info("Đã xoá webhook cũ và drop pending updates");
+  } catch (e: any) {
+    logger.warn({ err: String(e?.message || e) }, "deleteWebHook lỗi (bỏ qua)");
+  }
+
+  // Chờ 2s để Telegram giải phóng session getUpdates cũ (instance cũ)
+  await new Promise((r) => setTimeout(r, 2000));
+
+  // Bắt đầu polling với retry khi gặp 409
+  const startPollingWithRetry = async (attempt = 1): Promise<void> => {
+    try {
+      await bot.startPolling({ restart: true });
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (/409|Conflict|terminated by other getUpdates/i.test(msg) && attempt <= 5) {
+        const wait = Math.min(30000, 5000 * attempt);
+        logger.warn(`409 Conflict – chờ ${wait}ms rồi thử lại (lần ${attempt}/5)`);
+        await new Promise((r) => setTimeout(r, wait));
+        return startPollingWithRetry(attempt + 1);
+      }
+      throw err;
+    }
+  };
+  await startPollingWithRetry();
+
   logger.info("Bot Telegram QN88.FUN đã khởi động (polling)");
 
   // ── Tự động in đậm toàn bộ tin nhắn ──
@@ -2622,7 +2654,7 @@ export function startBot(): TelegramBot | null {
       }
       if (enabledGroups.has(chatId)) { await bot.sendMessage(chatId, "✅ Game tài xỉu đang chạy trong nhóm này rồi!"); return; }
       enabledGroups.add(chatId);
-      db.prepare("INSERT INTO group_game_enabled (chat_id) VALUES (?) ON CONFLICT DO NOTHING").run(chatId);
+      db.prepare("INSERT OR IGNORE INTO group_game_enabled (chat_id) VALUES (?)").run(chatId);
       await bot.sendMessage(chatId, `🎲 *Game Tài Xỉu đã được bật!*\n\nCách đặt cược:\n\`T/Tai 10000\` — Đặt Tài\n\`X/Xiu 10000\` — Đặt Xỉu\n\`C/Chan 10000\` — Đặt Chẵn\n\`L/Le 10000\` — Đặt Lẻ\n\nCược tất tay: \`T max\` / \`X max\` / \`C max\` / \`L max\`\n\nPhiên mới sẽ bắt đầu ngay!`, { parse_mode: "Markdown" });
       await startSession(chatId, true);
     } catch (e) { console.error(e); }
@@ -2833,7 +2865,7 @@ export function startBot(): TelegramBot | null {
       const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
       if (!isAdmin(telegramId)) {
         if (!hasFirstDeposit(user)) {
-          await bot.sendMessage(chatId, `❌ Bạn cần nạp tối thiểu 30.000đ để mua code.`);
+          await bot.sendMessage(chatId, `❌ Bạn cần nạp tối thiểu 20.000đ để mua code.`);
           return;
         }
         const wagerLeft = getWagerRequired(user.id);
@@ -3196,7 +3228,7 @@ export function startBot(): TelegramBot | null {
         if (cb.claimed) { await bot.sendMessage(chatId, "⚠️ Bạn đã nhận thưởng hoàn cược này rồi!"); return; }
         const newBal = user.balance + cb.cashback;
         db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBal, user.id);
-        db.prepare("UPDATE daily_cashbacks SET claimed = 1, claimed_at = NOW() WHERE id = ?").run(cb.id);
+        db.prepare("UPDATE daily_cashbacks SET claimed = 1, claimed_at = datetime('now') WHERE id = ?").run(cb.id);
         recordTransaction({ userId: user.id, type: "cashback", amount: cb.cashback, fee: 0, balanceBefore: user.balance, balanceAfter: newBal, note: `Hoàn cược ngày ${date}` });
         try {
           await bot.editMessageText(
@@ -3218,7 +3250,7 @@ export function startBot(): TelegramBot | null {
           const u = db.prepare("SELECT * FROM users WHERE id = ?").get(wit.user_id) as any;
           db.prepare("UPDATE users SET total_withdraw = ? WHERE id = ?").run(u.total_withdraw + wit.amount, u.id);
           recordTransaction({ userId: u.id, type: "withdraw", amount: wit.amount, fee: wit.fee, balanceBefore: u.balance + wit.amount, balanceAfter: u.balance, note: `Rút tiền về STK ${wit.bank_account} - ${wit.bank_name} - ${wit.bank_owner}` });
-          db.prepare("UPDATE pending_withdrawals SET status='approved', handled_at=NOW() WHERE id=?").run(witId);
+          db.prepare("UPDATE pending_withdrawals SET status='approved', handled_at=datetime('now') WHERE id=?").run(witId);
           try { await bot.editMessageText(`✅ ĐÃ DUYỆT rút *${formatNumber(wit.amount)}* cho Telegram ID ${wit.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           try { await bot.sendMessage(wit.telegram_id, `✅ Rút tiền thành công!\nSố tiền ${formatNumber(wit.net)} đã được chuyển về STK liên kết của bạn`); } catch {}
           const maskedWitId = `****${String(wit.telegram_id).slice(-5)}`;
@@ -3227,7 +3259,7 @@ export function startBot(): TelegramBot | null {
           const u = db.prepare("SELECT * FROM users WHERE id = ?").get(wit.user_id) as any;
           const restoredBal = u.balance + wit.amount;
           db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(restoredBal, u.id);
-          db.prepare("UPDATE pending_withdrawals SET status='rejected', handled_at=NOW() WHERE id=?").run(witId);
+          db.prepare("UPDATE pending_withdrawals SET status='rejected', handled_at=datetime('now') WHERE id=?").run(witId);
           try { await bot.editMessageText(`❌ ĐÃ TỪ CHỐI rút *${formatNumber(wit.amount)}* của Telegram ID ${wit.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           try { await bot.sendMessage(wit.telegram_id, `❌ Yêu cầu rút *${formatNumber(wit.amount)}* đã bị từ chối.\n💰 Số tiền đã được hoàn lại vào tài khoản: ${formatNumber(restoredBal)}\nLiên hệ admin để biết thêm.`, { parse_mode: "Markdown" }); } catch {}
         }
@@ -3265,14 +3297,14 @@ export function startBot(): TelegramBot | null {
             db.prepare("UPDATE users SET first_deposit_done=1 WHERE id=?").run(u.id);
           }
           updateVipLevel({ ...u, total_deposit: u.total_deposit + dep.amount });
-          db.prepare("UPDATE pending_deposits SET status='approved', handled_at=NOW() WHERE id=?").run(depId);
+          db.prepare("UPDATE pending_deposits SET status='approved', handled_at=datetime('now') WHERE id=?").run(depId);
           try { await bot.editMessageText(`✅ ĐÃ DUYỆT nạp *${formatNumber(dep.amount)}* cho Telegram ID ${dep.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           const wipedNote = (isFirstDeposit && wipedAmount > 0) ? `\n⚠️ Số dư cũ trước khi nạp đã bị trừ: -${formatNumber(wipedAmount)}` : "";
           try { await bot.sendMessage(dep.telegram_id, `✅ Ting Ting\n💰 Nạp tiền thành công ${formatNumber(dep.amount)}\n🎁Khuyến mãi nạp 3%: ${formatNumber(bonus)}${wipedNote}\nSố dư hiện tại: ${formatNumber(newBal)}`); } catch {}
           const maskedId = `****${String(dep.telegram_id).slice(-5)}`;
           for (const gid of enabledGroups) { try { await bot.sendMessage(gid, `*Người chơi ${maskedId}*\n*✅ Nạp tiền thành công ${formatNumber(dep.amount)}*\n*🎁Khuyến mãi nạp 3%: +${formatNumber(bonus)}*`, { parse_mode: "Markdown" }); } catch {} }
         } else {
-          db.prepare("UPDATE pending_deposits SET status='rejected', handled_at=NOW() WHERE id=?").run(depId);
+          db.prepare("UPDATE pending_deposits SET status='rejected', handled_at=datetime('now') WHERE id=?").run(depId);
           try { await bot.editMessageText(`❌ ĐÃ TỪ CHỐI nạp *${formatNumber(dep.amount)}* của Telegram ID ${dep.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           try { await bot.sendMessage(dep.telegram_id, `❌ Yêu cầu nạp *${formatNumber(dep.amount)}* đã bị từ chối. Liên hệ admin để biết thêm.`, { parse_mode: "Markdown" }); } catch {}
         }
@@ -3727,7 +3759,22 @@ export function startBot(): TelegramBot | null {
     } catch (e) { console.error(e); }
   });
 
-  bot.on("polling_error", (error: any) => { logger.error({ error }, "Lỗi polling Telegram bot"); });
+  bot.on("polling_error", async (error: any) => {
+    const msg = String(error?.message || error);
+    logger.error({ error: msg }, "Lỗi polling Telegram bot");
+    // 409: instance khác đang getUpdates → tạm dừng rồi thử lại
+    if (/409|Conflict|terminated by other getUpdates/i.test(msg)) {
+      try {
+        await bot.stopPolling({ cancel: true } as any);
+        await new Promise((r) => setTimeout(r, 5000));
+        await bot.deleteWebHook({ drop_pending_updates: true } as any);
+        await bot.startPolling({ restart: true });
+        logger.info("Đã khôi phục polling sau 409");
+      } catch (e: any) {
+        logger.error({ err: String(e?.message || e) }, "Khôi phục polling thất bại");
+      }
+    }
+  });
 
   // ── Hoàn cược ngày: chạy lúc 00h00 giờ VN (UTC+7) ──
   async function sendDailyCashbacks(targetDate?: string) {
@@ -3745,7 +3792,7 @@ export function startBot(): TelegramBot | null {
       SELECT gb.user_id, SUM(gb.amount) as total_bet
       FROM game_bets gb
       JOIN game_sessions gs ON gb.session_id = gs.id
-      WHERE to_char((gs.ended_at::timestamp + INTERVAL '+7 hours'), 'YYYY-MM-DD') = ?
+      WHERE date(gs.ended_at, '+7 hours') = ?
       GROUP BY gb.user_id
     `).all(date) as any[];
 
@@ -3753,7 +3800,7 @@ export function startBot(): TelegramBot | null {
       const cashback = Math.floor(row.total_bet * 0.005);
       if (cashback < 1) continue;
       try {
-        db.prepare("INSERT INTO daily_cashbacks (user_id, date, total_bet, cashback) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")
+        db.prepare("INSERT OR IGNORE INTO daily_cashbacks (user_id, date, total_bet, cashback) VALUES (?, ?, ?, ?)")
           .run(row.user_id, date, row.total_bet, cashback);
       } catch {}
       const user = getUserById(row.user_id);
