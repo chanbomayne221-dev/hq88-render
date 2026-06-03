@@ -1,4 +1,4 @@
-# Render Blueprint – deploy 1-click HQ88 Telegram Bot
+# Render Blueprint – deploy 1-click HQ88 Telegram Bot (PostgreSQL)
 services:
   - type: web
     name: hq88-telegram-bot
@@ -6,7 +6,6 @@ services:
     plan: starter
     region: singapore
     branch: main
-    # Ép Render dùng npm (không pnpm) để tránh lỗi ERR_PNPM_IGNORED_BUILDS với better-sqlite3
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
@@ -20,11 +19,8 @@ services:
         sync: false
       - key: ADMIN_ID
         sync: false
-      - key: DB_PATH
-        value: /var/data/bot.sqlite
+      # Connection string PostgreSQL (Supabase / Render Postgres / Neon ...)
+      - key: DATABASE_URL
+        sync: false
       - key: LOG_LEVEL
         value: info
-    disk:
-      name: bot-data
-      mountPath: /var/data
-      sizeGB: 1
