@@ -300,7 +300,7 @@ function formatBetStatus(sessionNumber: number, secondsLeft: number, totals: any
     `*⚫️ LẺ: ${formatNumber(totals.le)}*`;
   const hasCombo = totals.tc > 0 || totals.tl > 0 || totals.xc > 0 || totals.xl > 0;
   if (hasCombo) {
-    msg += `\n\n**`;
+    msg += `\n\n`;
     if (totals.tc > 0) msg += `\n*  TC: ${formatNumber(totals.tc)}*`;
     if (totals.tl > 0) msg += `\n*  TL: ${formatNumber(totals.tl)}*`;
     if (totals.xc > 0) msg += `\n*  XC: ${formatNumber(totals.xc)}*`;
@@ -2865,7 +2865,7 @@ export async function startBot(): Promise<TelegramBot | null> {
       const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
       if (!isAdmin(telegramId)) {
         if (!hasFirstDeposit(user)) {
-          await bot.sendMessage(chatId, `❌ Bạn cần nạp tối thiểu 20.000đ để mua code.`);
+          await bot.sendMessage(chatId, `❌ Bạn cần nạp tối thiểu 30.000đ để mua code.`);
           return;
         }
         const wagerLeft = getWagerRequired(user.id);
