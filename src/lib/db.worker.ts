@@ -41,8 +41,7 @@ async function ensureSchema() {
       const schemaPath = path.join(__dirname, "..", "..", "sql", "schema.sql");
       const altPath = path.join(process.cwd(), "sql", "schema.sql");
       const file = fs.existsSync(schemaPath) ? schemaPath : altPath;
-      const rawSql = fs.readFileSync(file, "utf8");
-      const sql = preprocessSql(rawSql);
+      const sql = fs.readFileSync(file, "utf8");
       const client = await pool.connect();
       try {
         await client.query(sql);
@@ -85,9 +84,6 @@ function preprocessSql(sql: string): string {
   s = s.replace(/datetime\(\s*'now'\s*\)/gi, "to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')");
   // date('now')
   s = s.replace(/\bdate\(\s*'now'\s*\)/gi, "to_char(CURRENT_DATE, 'YYYY-MM-DD')");
-  // date(<col>, '+N hours') – PG tương đương
-  s = s.replace(/\bdate\(\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*,\s*'\s*([+-]?\d+)\s*hours?\s*'\s*\)/gi,
-    (_m, c, h) => `to_char(((${c})::timestamp + INTERVAL '${h} hours'), 'YYYY-MM-DD')`);
   // date(<col>) – cắt 10 ký tự đầu
   s = s.replace(/\bdate\(\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\)/g, "substr($1, 1, 10)");
 
