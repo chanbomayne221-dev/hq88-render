@@ -31,169 +31,8 @@ const MIN_BET = 2_000;
 const MAX_BET = 5_000_000;
 
 // ─── Database ──────────────────────────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0,
-    vip_level INTEGER NOT NULL DEFAULT 0,
-    total_bet INTEGER NOT NULL DEFAULT 0,
-    today_bet INTEGER NOT NULL DEFAULT 0,
-    week_bet INTEGER NOT NULL DEFAULT 0,
-    total_deposit INTEGER NOT NULL DEFAULT 0,
-    total_withdraw INTEGER NOT NULL DEFAULT 0,
-    win_streak INTEGER NOT NULL DEFAULT 0,
-    lose_streak INTEGER NOT NULL DEFAULT 0,
-    max_win_streak INTEGER NOT NULL DEFAULT 0,
-    max_lose_streak INTEGER NOT NULL DEFAULT 0,
-    bank_name TEXT,
-    bank_account TEXT,
-    bank_owner TEXT,
-    withdraw_fee_pct REAL NOT NULL DEFAULT 0.5,
-    is_blocked INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    last_checkin TEXT,
-    daily_gift_date TEXT,
-    daily_gift_claimed INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    amount INTEGER NOT NULL,
-    fee INTEGER NOT NULL DEFAULT 0,
-    balance_before INTEGER NOT NULL,
-    balance_after INTEGER NOT NULL,
-    note TEXT,
-    ref_user_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS giftcodes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT UNIQUE NOT NULL,
-    amount INTEGER NOT NULL,
-    max_uses INTEGER NOT NULL DEFAULT 1,
-    used_count INTEGER NOT NULL DEFAULT 0,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    expires_at TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS giftcode_usages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    giftcode_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
-    used_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(giftcode_id, user_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS checkins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    reward INTEGER NOT NULL,
-    streak INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS game_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id INTEGER NOT NULL,
-    session_number INTEGER NOT NULL,
-    dice1 INTEGER,
-    dice2 INTEGER,
-    dice3 INTEGER,
-    total INTEGER,
-    result_tai INTEGER,
-    result_chan INTEGER,
-    is_triple INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'betting',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    ended_at TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS game_bets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
-    bet_type TEXT NOT NULL,
-    amount INTEGER NOT NULL,
-    is_win INTEGER,
-    payout INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS group_game_enabled (
-    chat_id INTEGER PRIMARY KEY,
-    enabled_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS jackpot_pool (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    amount INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS pending_deposits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    telegram_id INTEGER NOT NULL,
-    group_chat_id INTEGER,
-    amount INTEGER NOT NULL,
-    note TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    handled_at TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS pending_withdrawals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    telegram_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL,
-    fee INTEGER NOT NULL DEFAULT 0,
-    net INTEGER NOT NULL DEFAULT 0,
-    bank_name TEXT,
-    bank_account TEXT,
-    bank_owner TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    handled_at TEXT
-  );
-`);
-
-db.prepare("INSERT OR IGNORE INTO jackpot_pool (id, amount) VALUES (1, 0)").run();
-
-try { db.exec("ALTER TABLE pending_deposits ADD COLUMN group_chat_id INTEGER"); } catch {}
-try { db.exec("ALTER TABLE pending_deposits ADD COLUMN note TEXT"); } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN referrer_id INTEGER"); } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN referral_today INTEGER NOT NULL DEFAULT 0"); } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN referral_today_date TEXT"); } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN referral_total INTEGER NOT NULL DEFAULT 0"); } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN first_deposit_done INTEGER NOT NULL DEFAULT 0"); } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN wager_required INTEGER NOT NULL DEFAULT 0"); } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN redeemed_points INTEGER NOT NULL DEFAULT 0"); } catch {}
-db.exec(`
-  CREATE TABLE IF NOT EXISTS daily_cashbacks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    date TEXT NOT NULL,
-    total_bet INTEGER NOT NULL,
-    cashback INTEGER NOT NULL,
-    claimed INTEGER NOT NULL DEFAULT 0,
-    claimed_at TEXT,
-    UNIQUE(user_id, date)
-  );
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS bot_settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`);
+// Schema được khởi tạo bởi sql/schema.sql (tự chạy trong db.worker.ts).
+// Không khai báo CREATE TABLE / ALTER TABLE / seed jackpot_pool ở đây nữa.
 
 // ─── Fake Bot Toggle ──────────────────────────────────────────────────────
 function isFakeBotEnabled() {
@@ -249,23 +88,7 @@ let historyChannelId: number | null = (() => {
 })();
 
 // ─── Fake Bots (Auto-Bet) ─────────────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS fake_bots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    min_bet INTEGER NOT NULL DEFAULT 10000,
-    max_bet INTEGER NOT NULL DEFAULT 100000,
-    bet_types TEXT NOT NULL DEFAULT 'tai,xiu',
-    delay_min INTEGER NOT NULL DEFAULT 5,
-    delay_max INTEGER NOT NULL DEFAULT 35,
-    balance_refill INTEGER NOT NULL DEFAULT 50000000,
-    enabled INTEGER NOT NULL DEFAULT 1
-  );
-`);
-try { db.exec("ALTER TABLE users ADD COLUMN is_fake_bot INTEGER NOT NULL DEFAULT 0"); } catch {}
-try { db.exec("ALTER TABLE fake_bots ADD COLUMN vip_icon TEXT DEFAULT ''"); } catch {}
-try { db.exec("UPDATE fake_bots SET vip_icon='🏵️' WHERE vip_icon IS NULL OR vip_icon=''"); } catch {}
+// Bảng fake_bots + cột is_fake_bot/vip_icon được tạo trong sql/schema.sql
 
 // Tạo 2 bot ảo mặc định nếu chưa có
 (() => {
@@ -276,8 +99,8 @@ try { db.exec("UPDATE fake_bots SET vip_icon='🏵️' WHERE vip_icon IS NULL OR
     { name: "Thu Hà 🌸",    telegram_id: -1002, min_bet: 5000,  max_bet: 50000, bet_types: "tai,xiu" },
   ];
   for (const b of defaults) {
-    db.prepare("INSERT OR IGNORE INTO users (telegram_id, first_name, balance, is_fake_bot) VALUES (?, ?, 50000000, 1)").run(b.telegram_id, b.name);
-    db.prepare("INSERT OR IGNORE INTO fake_bots (name, telegram_id, min_bet, max_bet, bet_types) VALUES (?, ?, ?, ?, ?)").run(b.name, b.telegram_id, b.min_bet, b.max_bet, b.bet_types);
+    db.prepare("INSERT INTO users (telegram_id, first_name, balance, is_fake_bot) VALUES (?, ?, 50000000, 1) ON CONFLICT DO NOTHING").run(b.telegram_id, b.name);
+    db.prepare("INSERT INTO fake_bots (name, telegram_id, min_bet, max_bet, bet_types) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").run(b.name, b.telegram_id, b.min_bet, b.max_bet, b.bet_types);
   }
 })();
 
@@ -320,7 +143,7 @@ function syncVipLevel(u: any) {
 }
 
 function getOrCreateUser(telegramId: number, firstName?: string, username?: string) {
-  const res = db.prepare(`INSERT OR IGNORE INTO users (telegram_id, first_name, username, balance) VALUES (?, ?, ?, ?)`).run(telegramId, firstName ?? null, username ?? null, SIGNUP_BONUS);
+  const res = db.prepare(`INSERT INTO users (telegram_id, first_name, username, balance) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`).run(telegramId, firstName ?? null, username ?? null, SIGNUP_BONUS);
   if ((res as any).changes > 0) {
     const u = db.prepare("SELECT id, balance FROM users WHERE telegram_id = ?").get(telegramId) as any;
     recordTransaction({ userId: u.id, type: "gift", amount: SIGNUP_BONUS, fee: 0, balanceBefore: 0, balanceAfter: SIGNUP_BONUS, note: "Tặng 2.000 khi đăng ký" });
@@ -701,7 +524,7 @@ async function startSession(chatId: number, silent = false) {
 
   const sessionNumber = getNextSessionNumber();
   const sessionId = Number(
-    (db.prepare("INSERT INTO game_sessions (chat_id, session_number) VALUES (?, ?)").run(chatId, sessionNumber) as any).lastInsertRowid
+    (db.prepare("INSERT INTO game_sessions (chat_id, session_number) VALUES (?, ?) RETURNING id").run(chatId, sessionNumber) as any).lastInsertRowid
   );
 
   const session: any = {
@@ -763,7 +586,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   session.timers.forEach(clearTimeout);
 
   if (!hasBets(session)) {
-    db.prepare(`UPDATE game_sessions SET status='done', ended_at=datetime('now') WHERE id=?`).run(sessionId);
+    db.prepare(`UPDATE game_sessions SET status='done', ended_at=NOW() WHERE id=?`).run(sessionId);
     setTimeout(() => startSession(chatId, true), 2_000);
     return;
   }
@@ -847,7 +670,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   const isTai = total >= 11;
   const isChan = total % 2 === 0;
 
-  db.prepare(`UPDATE game_sessions SET dice1=?, dice2=?, dice3=?, total=?, result_tai=?, result_chan=?, is_triple=?, status='done', ended_at=datetime('now') WHERE id=?`)
+  db.prepare(`UPDATE game_sessions SET dice1=?, dice2=?, dice3=?, total=?, result_tai=?, result_chan=?, is_triple=?, status='done', ended_at=NOW() WHERE id=?`)
     .run(d1, d2, d3, total, isTai ? 1 : 0, isChan ? 1 : 0, isTriple ? 1 : 0, sessionId);
 
   let totalWinPayout = 0;
@@ -1981,7 +1804,7 @@ async function processWithdraw(chatId: number, telegramId: number, amount: numbe
   if (!user.bank_account || !user.bank_name || !user.bank_owner) { await bot.sendMessage(chatId, "❗ Bạn chưa liên kết ngân hàng.\nGõ /setbank để cài đặt."); return; }
   const newBalance = user.balance - amount;
   db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBalance, user.id);
-  const row = db.prepare(`INSERT INTO pending_withdrawals (user_id, telegram_id, amount, fee, net, bank_name, bank_account, bank_owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+  const row = db.prepare(`INSERT INTO pending_withdrawals (user_id, telegram_id, amount, fee, net, bank_name, bank_account, bank_owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
     .run(user.id, telegramId, amount, fee, net, user.bank_name, user.bank_account, user.bank_owner) as any;
   const witId = row.lastInsertRowid;
   await bot.sendMessage(chatId,
@@ -2147,7 +1970,7 @@ async function sendAdminStats(chatId: number) {
   const totalWin = (db.prepare("SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE type='win'").get() as any).s;
   const totalSessions = (db.prepare("SELECT COUNT(*) as c FROM game_sessions WHERE status='done'").get() as any).c;
   const activeGifts = (db.prepare("SELECT COUNT(*) as c FROM giftcodes WHERE is_active=1").get() as any).c;
-  const todayTx = (db.prepare("SELECT COUNT(*) as c FROM transactions WHERE date(created_at)=date('now')").get() as any).c;
+  const todayTx = (db.prepare("SELECT COUNT(*) as c FROM transactions WHERE substr(created_at,1,10)=to_char(CURRENT_DATE,'YYYY-MM-DD')").get() as any).c;
   const totalBalance = (db.prepare("SELECT COALESCE(SUM(balance),0) as s FROM users").get() as any).s;
   await bot.sendMessage(chatId,
     `📊 *THỐNG KÊ HỆ THỐNG*\n\n👥 Tổng user: *${formatNumber(totalUsers)}* (bị khóa: ${blockedUsers})\n💰 Tổng số dư hệ thống: *${formatNumber(totalBalance)}*\n\n📥 Tổng nạp: *${formatNumber(totalDeposit)}*\n📤 Tổng rút: *${formatNumber(totalWithdraw)}*\n🎮 Tổng cược: *${formatNumber(totalBet)}*\n🏆 Tổng trả thưởng: *${formatNumber(totalWin)}*\n📈 Lợi nhuận nhà cái: *${formatNumber(totalBet - totalWin)}*\n\n🎲 Tổng phiên game: *${formatNumber(totalSessions)}*\n🎁 Giftcode đang hoạt động: *${activeGifts}*\n📋 Giao dịch hôm nay: *${todayTx}*`,
@@ -2799,7 +2622,7 @@ export function startBot(): TelegramBot | null {
       }
       if (enabledGroups.has(chatId)) { await bot.sendMessage(chatId, "✅ Game tài xỉu đang chạy trong nhóm này rồi!"); return; }
       enabledGroups.add(chatId);
-      db.prepare("INSERT OR IGNORE INTO group_game_enabled (chat_id) VALUES (?)").run(chatId);
+      db.prepare("INSERT INTO group_game_enabled (chat_id) VALUES (?) ON CONFLICT DO NOTHING").run(chatId);
       await bot.sendMessage(chatId, `🎲 *Game Tài Xỉu đã được bật!*\n\nCách đặt cược:\n\`T/Tai 10000\` — Đặt Tài\n\`X/Xiu 10000\` — Đặt Xỉu\n\`C/Chan 10000\` — Đặt Chẵn\n\`L/Le 10000\` — Đặt Lẻ\n\nCược tất tay: \`T max\` / \`X max\` / \`C max\` / \`L max\`\n\nPhiên mới sẽ bắt đầu ngay!`, { parse_mode: "Markdown" });
       await startSession(chatId, true);
     } catch (e) { console.error(e); }
@@ -2868,7 +2691,7 @@ export function startBot(): TelegramBot | null {
       }
       const randCode = Math.random().toString(36).slice(2, 8).toUpperCase();
       const transferNote = `NAP${telegramId}${randCode}`;
-      const row = db.prepare(`INSERT INTO pending_deposits (user_id, telegram_id, group_chat_id, amount, note) VALUES (?, ?, ?, ?, ?)`).run(user.id, telegramId, chatId, amount, transferNote) as any;
+      const row = db.prepare(`INSERT INTO pending_deposits (user_id, telegram_id, group_chat_id, amount, note) VALUES (?, ?, ?, ?, ?) RETURNING id`).run(user.id, telegramId, chatId, amount, transferNote) as any;
       const depId = row.lastInsertRowid;
       const caption =
         `📌 Lệnh nạp ${formatNumber(amount)} đã tạo.\n\n` +
@@ -3373,7 +3196,7 @@ export function startBot(): TelegramBot | null {
         if (cb.claimed) { await bot.sendMessage(chatId, "⚠️ Bạn đã nhận thưởng hoàn cược này rồi!"); return; }
         const newBal = user.balance + cb.cashback;
         db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBal, user.id);
-        db.prepare("UPDATE daily_cashbacks SET claimed = 1, claimed_at = datetime('now') WHERE id = ?").run(cb.id);
+        db.prepare("UPDATE daily_cashbacks SET claimed = 1, claimed_at = NOW() WHERE id = ?").run(cb.id);
         recordTransaction({ userId: user.id, type: "cashback", amount: cb.cashback, fee: 0, balanceBefore: user.balance, balanceAfter: newBal, note: `Hoàn cược ngày ${date}` });
         try {
           await bot.editMessageText(
@@ -3395,7 +3218,7 @@ export function startBot(): TelegramBot | null {
           const u = db.prepare("SELECT * FROM users WHERE id = ?").get(wit.user_id) as any;
           db.prepare("UPDATE users SET total_withdraw = ? WHERE id = ?").run(u.total_withdraw + wit.amount, u.id);
           recordTransaction({ userId: u.id, type: "withdraw", amount: wit.amount, fee: wit.fee, balanceBefore: u.balance + wit.amount, balanceAfter: u.balance, note: `Rút tiền về STK ${wit.bank_account} - ${wit.bank_name} - ${wit.bank_owner}` });
-          db.prepare("UPDATE pending_withdrawals SET status='approved', handled_at=datetime('now') WHERE id=?").run(witId);
+          db.prepare("UPDATE pending_withdrawals SET status='approved', handled_at=NOW() WHERE id=?").run(witId);
           try { await bot.editMessageText(`✅ ĐÃ DUYỆT rút *${formatNumber(wit.amount)}* cho Telegram ID ${wit.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           try { await bot.sendMessage(wit.telegram_id, `✅ Rút tiền thành công!\nSố tiền ${formatNumber(wit.net)} đã được chuyển về STK liên kết của bạn`); } catch {}
           const maskedWitId = `****${String(wit.telegram_id).slice(-5)}`;
@@ -3404,7 +3227,7 @@ export function startBot(): TelegramBot | null {
           const u = db.prepare("SELECT * FROM users WHERE id = ?").get(wit.user_id) as any;
           const restoredBal = u.balance + wit.amount;
           db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(restoredBal, u.id);
-          db.prepare("UPDATE pending_withdrawals SET status='rejected', handled_at=datetime('now') WHERE id=?").run(witId);
+          db.prepare("UPDATE pending_withdrawals SET status='rejected', handled_at=NOW() WHERE id=?").run(witId);
           try { await bot.editMessageText(`❌ ĐÃ TỪ CHỐI rút *${formatNumber(wit.amount)}* của Telegram ID ${wit.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           try { await bot.sendMessage(wit.telegram_id, `❌ Yêu cầu rút *${formatNumber(wit.amount)}* đã bị từ chối.\n💰 Số tiền đã được hoàn lại vào tài khoản: ${formatNumber(restoredBal)}\nLiên hệ admin để biết thêm.`, { parse_mode: "Markdown" }); } catch {}
         }
@@ -3442,14 +3265,14 @@ export function startBot(): TelegramBot | null {
             db.prepare("UPDATE users SET first_deposit_done=1 WHERE id=?").run(u.id);
           }
           updateVipLevel({ ...u, total_deposit: u.total_deposit + dep.amount });
-          db.prepare("UPDATE pending_deposits SET status='approved', handled_at=datetime('now') WHERE id=?").run(depId);
+          db.prepare("UPDATE pending_deposits SET status='approved', handled_at=NOW() WHERE id=?").run(depId);
           try { await bot.editMessageText(`✅ ĐÃ DUYỆT nạp *${formatNumber(dep.amount)}* cho Telegram ID ${dep.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           const wipedNote = (isFirstDeposit && wipedAmount > 0) ? `\n⚠️ Số dư cũ trước khi nạp đã bị trừ: -${formatNumber(wipedAmount)}` : "";
           try { await bot.sendMessage(dep.telegram_id, `✅ Ting Ting\n💰 Nạp tiền thành công ${formatNumber(dep.amount)}\n🎁Khuyến mãi nạp 3%: ${formatNumber(bonus)}${wipedNote}\nSố dư hiện tại: ${formatNumber(newBal)}`); } catch {}
           const maskedId = `****${String(dep.telegram_id).slice(-5)}`;
           for (const gid of enabledGroups) { try { await bot.sendMessage(gid, `*Người chơi ${maskedId}*\n*✅ Nạp tiền thành công ${formatNumber(dep.amount)}*\n*🎁Khuyến mãi nạp 3%: +${formatNumber(bonus)}*`, { parse_mode: "Markdown" }); } catch {} }
         } else {
-          db.prepare("UPDATE pending_deposits SET status='rejected', handled_at=datetime('now') WHERE id=?").run(depId);
+          db.prepare("UPDATE pending_deposits SET status='rejected', handled_at=NOW() WHERE id=?").run(depId);
           try { await bot.editMessageText(`❌ ĐÃ TỪ CHỐI nạp *${formatNumber(dep.amount)}* của Telegram ID ${dep.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
           try { await bot.sendMessage(dep.telegram_id, `❌ Yêu cầu nạp *${formatNumber(dep.amount)}* đã bị từ chối. Liên hệ admin để biết thêm.`, { parse_mode: "Markdown" }); } catch {}
         }
@@ -3816,7 +3639,7 @@ export function startBot(): TelegramBot | null {
             const cid = parseInt(text.trim());
             if (isNaN(cid)) { await bot.sendMessage(chatId, "❗ ID không hợp lệ. Hãy nhập đúng dạng số (VD: -1001234567890)."); return; }
             historyChannelId = cid;
-            db.prepare("INSERT OR REPLACE INTO bot_settings (key, value) VALUES ('history_channel_id', ?)").run(String(cid));
+            db.prepare("INSERT INTO bot_settings (key, value) VALUES ('history_channel_id', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(String(cid));
             resetState(telegramId);
             await bot.sendMessage(chatId, `✅ Đã cài group lịch sử phiên: \`${cid}\`\n\nBot sẽ tự đăng kết quả từng phiên vào đó.`, { parse_mode: "Markdown" });
             return;
@@ -3922,7 +3745,7 @@ export function startBot(): TelegramBot | null {
       SELECT gb.user_id, SUM(gb.amount) as total_bet
       FROM game_bets gb
       JOIN game_sessions gs ON gb.session_id = gs.id
-      WHERE date(gs.ended_at, '+7 hours') = ?
+      WHERE to_char((gs.ended_at::timestamp + INTERVAL '+7 hours'), 'YYYY-MM-DD') = ?
       GROUP BY gb.user_id
     `).all(date) as any[];
 
@@ -3930,7 +3753,7 @@ export function startBot(): TelegramBot | null {
       const cashback = Math.floor(row.total_bet * 0.005);
       if (cashback < 1) continue;
       try {
-        db.prepare("INSERT OR IGNORE INTO daily_cashbacks (user_id, date, total_bet, cashback) VALUES (?, ?, ?, ?)")
+        db.prepare("INSERT INTO daily_cashbacks (user_id, date, total_bet, cashback) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")
           .run(row.user_id, date, row.total_bet, cashback);
       } catch {}
       const user = getUserById(row.user_id);
