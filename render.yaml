@@ -1,0 +1,28 @@
+# Render Blueprint – deploy 1-click cho HQ88 Telegram Bot
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: hq88-telegram-bot
+    runtime: node
+    plan: starter            # đổi sang "free" nếu chỉ test (free không có disk)
+    region: singapore        # gần Việt Nam nhất; có thể đổi: oregon, frankfurt...
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: BOT_TOKEN
+        sync: false          # nhập thủ công trong Dashboard → Environment
+      - key: ADMIN_ID
+        sync: false
+      - key: DB_PATH
+        value: /var/data/bot.sqlite
+      - key: LOG_LEVEL
+        value: info
+    disk:
+      name: bot-data
+      mountPath: /var/data   # SQLite + WAL nằm ở đây, không mất khi redeploy
+      sizeGB: 1
