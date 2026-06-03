@@ -56,8 +56,24 @@ async function ensureSchema() {
 // ─── SQLite → PostgreSQL: dịch SQL ───────────────────────────────────────
 function preprocessSql(sql: string): string {
   let s = sql;
+
+  // SQLite DDL → PostgreSQL DDL
+  // INTEGER PRIMARY KEY AUTOINCREMENT  →  SERIAL PRIMARY KEY
+  s = s.replace(/\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b/gi, "SERIAL PRIMARY KEY");
+  // INTEGER PRIMARY KEY (không có AUTOINCREMENT) → SERIAL PRIMARY KEY
+  s = s.replace(/\bINTEGER\s+PRIMARY\s+KEY\b(?!\s+AUTOINCREMENT)/gi, "SERIAL PRIMARY KEY");
+  // Xoá AUTOINCREMENT lẻ (an toàn nếu còn sót)
+  s = s.replace(/\bAUTOINCREMENT\b/gi, "");
+  // SQLite types → PG types
+  s = s.replace(/\bDATETIME\b/gi, "TIMESTAMP");
+  s = s.replace(/\bBLOB\b/gi, "BYTEA");
+  // CURRENT_TIMESTAMP giữ nguyên (PG hỗ trợ)
+
   const wasIgnore = /INSERT\s+OR\s+IGNORE/i.test(s);
   s = s.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT INTO");
+
+  // INSERT OR REPLACE → INSERT ... ON CONFLICT DO UPDATE (best-effort, để app tự viết rõ)
+  s = s.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, "INSERT INTO");
 
   // datetime('now','+N hours')
   s = s.replace(
@@ -113,7 +129,7 @@ async function handle(payload: { op: Op; sql: string; params?: any[] }) {
   if (op === "exec") {
     const client = await pool.connect();
     try {
-      await client.query(payload.sql);
+      await client.query(preprocessSql(payload.sql));
     } finally {
       client.release();
     }
