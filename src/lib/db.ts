@@ -1,43 +1,49 @@
-import Database from "better-sqlite3";
-import fs from "fs";
+// ─────────────────────────────────────────────────────────────────────────
+// DB facade: API đồng bộ kiểu better-sqlite3, backend là PostgreSQL (pg).
+// Dùng synckit gọi sang worker thread để giữ chữ ký sync.
+//
+//   db.prepare(sql).run(...args)  →  { changes, lastInsertRowid }
+//   db.prepare(sql).get(...args)  →  row | undefined
+//   db.prepare(sql).all(...args)  →  row[]
+//   db.exec(sqlMultiStatement)    →  void
+// ─────────────────────────────────────────────────────────────────────────
 import path from "path";
+import { createSyncFn } from "synckit";
 import { logger } from "./logger";
 
-// Đường dẫn DB: ưu tiên ENV DB_PATH, mặc định ./data/bot.sqlite
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "data", "bot.sqlite");
+const workerPath = path.join(__dirname, "db.worker.js");
 
-// Tự tạo thư mục chứa DB nếu chưa có (không crash khi thiếu)
-try {
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-    logger.info(`Đã tạo thư mục DB: ${dir}`);
-  }
-} catch (e) {
-  logger.warn("Không tạo được thư mục DB, sẽ thử dùng /tmp", e);
+type Payload =
+  | { op: "run"; sql: string; params?: any[] }
+  | { op: "get"; sql: string; params?: any[] }
+  | { op: "all"; sql: string; params?: any[] }
+  | { op: "exec"; sql: string };
+
+const callSync = createSyncFn(workerPath, {
+  timeout: Number(process.env.PGSYNC_TIMEOUT_MS || 30000),
+}) as (p: Payload) => any;
+
+function prepare(sql: string) {
+  return {
+    run(...args: any[]) {
+      const r = callSync({ op: "run", sql, params: args });
+      return { changes: r.changes ?? 0, lastInsertRowid: r.lastInsertRowid };
+    },
+    get(...args: any[]) {
+      const r = callSync({ op: "get", sql, params: args });
+      return r.row;
+    },
+    all(...args: any[]) {
+      const r = callSync({ op: "all", sql, params: args });
+      return r.rows ?? [];
+    },
+  };
 }
 
-let _db: Database.Database;
-try {
-  _db = new Database(DB_PATH);
-} catch (e) {
-  // Fallback: nếu volume read-only thì rớt về /tmp
-  logger.warn(`Không mở được DB tại ${DB_PATH}, fallback /tmp/bot.sqlite`, e);
-  _db = new Database("/tmp/bot.sqlite");
+function exec(sql: string) {
+  callSync({ op: "exec", sql });
 }
 
-_db.pragma("journal_mode = WAL");
-_db.pragma("synchronous = NORMAL");
-_db.pragma("foreign_keys = ON");
+export const db = { prepare, exec };
 
-logger.info(`SQLite sẵn sàng: ${DB_PATH}`);
-
-export const db = _db;
-
-// Đóng DB sạch sẽ khi thoát
-function closeDb() {
-  try { _db.close(); } catch {}
-}
-process.on("exit", closeDb);
-process.on("SIGINT", closeDb);
-process.on("SIGTERM", closeDb);
+logger.info("PostgreSQL DB facade sẵn sàng (pg + synckit worker)");
