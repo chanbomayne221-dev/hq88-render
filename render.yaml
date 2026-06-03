@@ -1,21 +1,23 @@
-# Render Blueprint – deploy 1-click cho HQ88 Telegram Bot
-# https://render.com/docs/blueprint-spec
+# Render Blueprint – deploy 1-click HQ88 Telegram Bot
 services:
   - type: web
     name: hq88-telegram-bot
     runtime: node
-    plan: starter            # đổi sang "free" nếu chỉ test (free không có disk)
-    region: singapore        # gần Việt Nam nhất; có thể đổi: oregon, frankfurt...
+    plan: starter
+    region: singapore
     branch: main
-    buildCommand: npm install && npm run build
+    # Ép Render dùng npm (không pnpm) để tránh lỗi ERR_PNPM_IGNORED_BUILDS với better-sqlite3
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
         value: 20.18.0
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
       - key: BOT_TOKEN
-        sync: false          # nhập thủ công trong Dashboard → Environment
+        sync: false
       - key: ADMIN_ID
         sync: false
       - key: DB_PATH
@@ -24,5 +26,5 @@ services:
         value: info
     disk:
       name: bot-data
-      mountPath: /var/data   # SQLite + WAL nằm ở đây, không mất khi redeploy
+      mountPath: /var/data
       sizeGB: 1
