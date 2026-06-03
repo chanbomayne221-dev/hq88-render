@@ -5,7 +5,7 @@
   "private": true,
   "main": "dist/index.js",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0 <22.0.0"
   },
   "scripts": {
     "start": "node dist/index.js",
@@ -27,5 +27,6 @@
     "onlyBuiltDependencies": [
       "better-sqlite3"
     ]
-  }
+  },
+  "packageManager": "npm@10.8.2"
 }

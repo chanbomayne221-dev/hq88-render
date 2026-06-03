@@ -1,0 +1,37 @@
+LỖI BẠN GẶP KHÔNG PHẢI DO CODE BOT NỮA, MÀ DO RENDER ĐANG DÙNG CẤU HÌNH DEPLOY CŨ.
+
+Nếu trên Render vẫn hiện lỗi:
+ERR_PNPM_IGNORED_BUILDS
+Ignored build scripts: better-sqlite3
+
+Hãy làm ĐÚNG 1 trong 2 cách sau:
+
+CÁCH 1 (KHUYÊN DÙNG) — Deploy bằng Blueprint
+1. Push toàn bộ source này lên GitHub.
+2. Trên Render chọn New + > Blueprint.
+3. Chọn đúng repo vừa push.
+4. Render sẽ đọc file render.yaml và dùng:
+   - buildCommand: npm install --include=dev && npm run build
+   - startCommand: npm start
+5. Nhập BOT_TOKEN và ADMIN_ID rồi Deploy.
+
+CÁCH 2 — Nếu bạn đã lỡ tạo Web Service thủ công trước đó
+1. Vào service cũ trên Render.
+2. Settings > Build & Deploy.
+3. Sửa Build Command thành:
+   npm install --include=dev && npm run build
+4. Sửa Start Command thành:
+   npm start
+5. Nếu có mục Package Manager, chọn npm.
+6. Clear build cache.
+7. Deploy lại.
+
+RẤT QUAN TRỌNG
+- Nếu vẫn giữ service cũ tạo từ trước, render.yaml có thể KHÔNG được áp dụng.
+- Log của bạn đang cho thấy Render vẫn dùng pnpm, tức là service hiện tại chưa nhận cấu hình mới.
+- Source zip này đã thêm:
+  - package-lock.json
+  - packageManager: npm@10.8.2
+  - .node-version
+  - render.yaml
+=> đủ tín hiệu để Render dùng npm khi tạo service đúng cách.
