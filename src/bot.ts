@@ -874,13 +874,13 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
 
   const resultMsg =
     `<b>Kết quả phiên #${session.sessionNumber}</b>\n` +
-    `┏━━━━━━━━━━━━━━━━━━┓\n` +
+    `┏━━━━━━━━━━━━━━━━┓\n` +
     `┃  <b>${d1}  ${d2}  ${d3}</b>  👉 <b>${resultLabel} ${resultColorEmojis}</b>\n┃\n` +
     `┃ Tổng thắng: <b>${formatNumber(totalWinPayout)}</b>\n` +
     `┃ Tổng thua: <b>${formatNumber(totalLossBet)}</b>\n` +
     `┃ Cộng hũ  : <b>+${formatNumber(huContrib)}</b>\n` +
     `┃ Hũ hiện tại: <b>${formatNumber(jackpotAmount)}</b>\n` +
-    `┗━━━━━━━━━━━━━━━━━━┛`;
+    `┗━━━━━━━━━━━━━━━━┛`;
 
   const historyHtml = taiXiuRow
     ? `\n<blockquote><b>Thống kê kết quả gần đây:</b>\n\n${taiXiuRow}\n${chanLeRow}</blockquote>`
