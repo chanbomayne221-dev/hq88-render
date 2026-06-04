@@ -994,7 +994,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   }
   for (const { telegramId, betType, amount, currentBal } of loserMessages) {
     if (telegramId < 0) continue; // skip fake bots
-    try { await bot.sendMessage(telegramId, `❌ Bạn THUA −${formatNumber(amount)} (${betTypeName[betType] ?? betType}) phiên #${session.sessionNumber}\n💰 Số dư: ${formatNumber(currentBal)}`); } catch {}
+    try { await bot.sendMessage(telegramId, `❌ Thua −${formatNumber(amount)} (${betTypeName[betType] ?? betType}) phiên #${session.sessionNumber}\n💰 Số dư còn: ${formatNumber(currentBal)}`); } catch {}
   }
 
   await unlockChat(chatId);
@@ -1676,7 +1676,7 @@ async function handlePrivateBet(msg: TelegramBot.Message, groupChatId: number, s
 
   // Xác nhận riêng cho người chơi
   await bot.sendMessage(chatId,
-    `✅ *Đặt cược thành công (ẩn danh)*\n\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – ${formatNumber(amount)}\n💰 Số dư còn lại: ${formatNumber(newBal)}`,
+    `✅ *Đặt cược thành công *\n\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – (Ẩn danh)${formatNumber(amount)}\n Số dư còn lại: ${formatNumber(newBal)}`,
     { parse_mode: "Markdown" }
   );
   return true;
