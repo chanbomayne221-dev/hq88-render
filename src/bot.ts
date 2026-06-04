@@ -423,6 +423,16 @@ const enabledGroups = new Set<number>(
 
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
+function normalizeIncomingText(text?: string) {
+  return (text ?? "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const userLastGroupChat = new Map<number, number>();
+
 async function lockChat(chatId: number) {
   try {
     await (bot as any).setChatPermissions(chatId, {
@@ -1007,7 +1017,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
 async function handleTdGame(msg: TelegramBot.Message): Promise<boolean> {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id;
-  const text = (msg.text ?? "").trim();
+  const text = normalizeIncomingText(msg.text);
   const tdMatch = text.match(/^TD\s+(max|\d[\d.,]*)/i);
   if (!tdMatch) return false;
 
@@ -1126,7 +1136,7 @@ async function handleTdGame(msg: TelegramBot.Message): Promise<boolean> {
 async function handleSlGame(msg: TelegramBot.Message): Promise<boolean> {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id;
-  const text = (msg.text ?? "").trim();
+  const text = normalizeIncomingText(msg.text);
   const match = text.match(/^SL\s+(max|\d[\d.,]*)/i);
   if (!match) return false;
   const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
@@ -1202,7 +1212,7 @@ async function handleSlGame(msg: TelegramBot.Message): Promise<boolean> {
 async function handleBrGame(msg: TelegramBot.Message): Promise<boolean> {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id;
-  const text = (msg.text ?? "").trim();
+  const text = normalizeIncomingText(msg.text);
   const match = text.match(/^BR\s+(max|\d[\d.,]*)/i);
   if (!match) return false;
   const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
@@ -1274,7 +1284,7 @@ const SB_MAX_BET = 5_000_000;
 async function handleSbGame(msg: TelegramBot.Message): Promise<boolean> {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id;
-  const text = (msg.text ?? "").trim();
+  const text = normalizeIncomingText(msg.text);
   const match = text.match(/^SB(3|4|5|6|7|8|9|1[0-8])(?:\s+|)(max|\d[\d.,]*)$/i);
   if (!match) return false;
 
@@ -1377,7 +1387,7 @@ async function resolveXxGame(chatId: number, userId: number, betType: string, am
 async function handleXxGame(msg: TelegramBot.Message): Promise<boolean> {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id;
-  const text = (msg.text ?? "").trim();
+  const text = normalizeIncomingText(msg.text);
   const match = text.match(/^(xxc|xxl|xxx|xxt)\s+(max|\d[\d.,]*)/i);
   if (!match) return false;
   const betType = match[1].toLowerCase();
@@ -1458,7 +1468,7 @@ const betTypeShort: any = { tai: "T", xiu: "X", chan: "C", le: "L", tc: "TC", tl
 async function handleGroupBet(msg: TelegramBot.Message) {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id;
-  const text = (msg.text ?? "").trim();
+  const text = normalizeIncomingText(msg.text);
 
   const match = text.match(BET_REGEX);
   if (!match) return false;
@@ -1587,7 +1597,7 @@ async function handleGroupBet(msg: TelegramBot.Message) {
 async function handlePrivateBet(msg: TelegramBot.Message, groupChatId: number, session: any): Promise<boolean> {
   const telegramId = msg.from!.id;
   const chatId = msg.chat.id; // private chat
-  const text = (msg.text ?? "").trim();
+  const text = normalizeIncomingText(msg.text);
 
   const match = text.match(BET_REGEX);
   if (!match) return false;
@@ -2143,9 +2153,14 @@ export async function startBot(): Promise<TelegramBot | null> {
 
   // Tìm phiên đang chạy: nếu nhắn trong nhóm thì lấy chatId nhóm,
   // nếu nhắn chat riêng thì tìm trong toàn bộ activeSessions
-  const findActiveSession = (msgChatId: number): { groupChatId: number; session: NonNullable<ReturnType<typeof activeSessions.get>> } | null => {
+  const findActiveSession = (msgChatId: number, telegramId?: number): { groupChatId: number; session: NonNullable<ReturnType<typeof activeSessions.get>> } | null => {
     const direct = activeSessions.get(msgChatId);
     if (direct) return { groupChatId: msgChatId, session: direct };
+    if (telegramId) {
+      const lastGroup = userLastGroupChat.get(telegramId);
+      const lastSession = lastGroup ? activeSessions.get(lastGroup) : null;
+      if (lastGroup && lastSession) return { groupChatId: lastGroup, session: lastSession };
+    }
     for (const [gid, s] of activeSessions.entries()) {
       return { groupChatId: gid, session: s };
     }
@@ -3339,10 +3354,11 @@ export async function startBot(): Promise<TelegramBot | null> {
     if (!msg.text || msg.text.startsWith("/")) return;
     const chatId = msg.chat.id;
     const telegramId = msg.from!.id;
-    const text = msg.text.trim();
+    const text = normalizeIncomingText(msg.text);
 
     try {
       if (msg.chat.type !== "private") {
+        if (enabledGroups.has(chatId)) userLastGroupChat.set(telegramId, chatId);
         if (text.toLowerCase() === "daythang") { await sendStreakTop(msg, "thang"); return; }
         if (text.toLowerCase() === "daythua") { await sendStreakTop(msg, "thua"); return; }
         // ── Cược Đoán tổng (SB) trong nhóm — tích hợp vào phiên ──
@@ -3454,10 +3470,11 @@ export async function startBot(): Promise<TelegramBot | null> {
       // ── Cược ẩn danh từ chat riêng ──
       if (effIdle && BET_REGEX.test(text)) {
         // Tìm session đang chạy, hoặc tạo mới cho nhóm đầu tiên đang bật game
-        let activeFound = findActiveSession(chatId);
+        let activeFound = findActiveSession(chatId, telegramId);
         if (!activeFound) {
           // Chưa có session nào — thử khởi động cho nhóm đầu tiên đang enabled
-          const firstGroup = [...enabledGroups][0];
+          const preferredGroup = userLastGroupChat.get(telegramId);
+          const firstGroup = preferredGroup && enabledGroups.has(preferredGroup) ? preferredGroup : [...enabledGroups][0];
           if (!firstGroup) {
             await bot.sendMessage(chatId, "⏳ Hiện chưa có phòng game nào hoạt động!");
             return;
