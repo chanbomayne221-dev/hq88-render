@@ -541,13 +541,15 @@ async function startSession(chatId: number, silent = false) {
   if (!silent) {
     try {
       await bot.sendMessage(chatId,
-        `*🎰 PHIÊN #${sessionNumber} — ĐẶT CƯỢC NGAY*\n` +
+        `*Xin mời đặt cược phiên #${sessionNumber} *\n` +
         `*Min: ${formatNumber(MIN_BET)} | Max: ${formatNumber(MAX_BET)}*\n\n` +
-        `*T/X/C/L [tiền] — Tài/Xỉu/Chẵn/Lẻ*\n` +
-        `*TC/TL/XC/XL [tiền] — Kép (x3.5)*\n` +
-        `*SB[4-17] [tiền] — Đoán tổng (x5→x40)*\n` +
-        `*D[1-6] [tiền] — Đoán 1 viên (x2/x3/x4)*\n` +
-        `*D[n1][n2] [tiền] — Đoán 2 viên (x3)*`,
+        `*Cách chơi: [Cửa cược] [số tiền]*\n` +
+        `*Cửa cược: - T/X/C/L*\n` +
+        `*- TC, TL, XC, XL*\n` +
+        `*- D1, D2, ... D6*\n` +
+        `*VD: D5 MAX hoặc D5 20000*\n` + 
+        `*VD: TC MAX hoặc TC 20000*\n` +                   
+        `*VD: T MAX hoặc C 20000*`,
         { parse_mode: "Markdown" }
       );
     } catch (e: any) { console.error("startSession sendMessage error:", e.message); }
