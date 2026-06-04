@@ -3475,7 +3475,40 @@ export async function startBot(): Promise<TelegramBot | null> {
       if (text === "🏦 Tài Khoản") { resetState(telegramId); await sendAccountInfo(chatId, telegramId); return; }
       if (text === "💵 Nạp Tiền") {
         resetState(telegramId);
-        await bot.sendMessage(chatId, `💵 *Nạp Tiền*\n\nGõ /nap [số tiền] để tạo lệnh nạp.\n\nVí dụ: /nap 50000`, { parse_mode: "Markdown", ...mainMenuKeyboard() }); return;
+await bot.sendMessage(chatId, `💳 *CHỌN MỆNH GIÁ NẠP TIỀN*
+
+━━━━━━━━━━━━━━
+
+💰 Nạp tối thiểu: *10.000₫*
+💰 Nạp tối đa: *500.000.000₫*
+
+━━━━━━━━━━━━━━
+
+➡️ *CÁCH LẤY THÔNG TIN NẠP*
+
+🔶 Gõ lệnh:
+/nap số_tiền
+
+Ví dụ:
+/nap 100000
+
+🔶 Hoặc bấm nút mệnh giá bên dưới để lấy nhanh.
+
+━━━━━━━━━━━━━━
+
+⚠️ *LƯU Ý*
+
+✅ Chuyển đúng *SỐ TIỀN* và *NỘI DUNG* được cung cấp.
+
+✅ Mỗi lần nạp cần lấy thông tin *MỚI*.
+
+🚫 Không sử dụng thông tin cũ cho giao dịch sau.
+
+━━━━━━━━━━━━━━
+
+💎 Nạp tối thiểu: *10.000₫*`, { parse_mode: "Markdown", ...mainMenuKeyboard() });
+
+return;
       }
       if (text === "💸 Rút Tiền") {
         resetState(telegramId);
