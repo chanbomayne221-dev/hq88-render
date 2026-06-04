@@ -870,12 +870,12 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   let resultLabel: string;
   let resultColorEmojis: string;
   resultLabel = `${isTai ? "TÀI" : "XỈU"} ${isChan ? "CHẴN" : "LẺ"}`;
-  resultColorEmojis = `${isTai ? "🔵" : "🔴"} ${isChan ? "⚪️" : "⚫️"}`;
+  resultColorEmojis = `${isTai ? "🔵" : "🔴} ${isChan ? "⚪️" : "⚫️"}`;
 
   const resultMsg =
     `<b>Kết quả phiên #${session.sessionNumber}</b>\n` +
     `┏━━━━━━━━━━━━━━━━┓\n` +
-    `┃  <b>${d1}  ${d2}  ${d3}</b>  👉 <b>${resultLabel} ${resultColorEmojis}</b>\n┃\n` +
+    `┃<b>${d1}  ${d2}  ${d3}</b>  👉 <b>${resultLabel} ${resultColorEmojis}</b>\n┃\n` +
     `┃ Tổng thắng: <b>${formatNumber(totalWinPayout)}</b>\n` +
     `┃ Tổng thua: <b>${formatNumber(totalLossBet)}</b>\n` +
     `┃ Cộng hũ  : <b>+${formatNumber(huContrib)}</b>\n` +
