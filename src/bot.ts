@@ -1676,7 +1676,7 @@ async function handlePrivateBet(msg: TelegramBot.Message, groupChatId: number, s
 
   // Xác nhận riêng cho người chơi
   await bot.sendMessage(chatId,
-    `✅ *Đặt cược thành công *\n\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – (Ẩn danh)${formatNumber(amount)}\n Số dư còn lại: ${formatNumber(newBal)}`,
+    `✅ *Đặt cược thành công *\n\n🎰 Phiên #${session.sessionNumber}(Ẩn danh)\n${betTypeLabel[betType]} – ${formatNumber(amount)}\n Số dư còn lại: ${formatNumber(newBal)}`,
     { parse_mode: "Markdown" }
   );
   return true;
