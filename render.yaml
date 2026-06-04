@@ -1,4 +1,6 @@
 # Render Blueprint – deploy 1-click HQ88 Telegram Bot (PostgreSQL)
+# QUAN TRỌNG: numInstances PHẢI = 1, nếu không sẽ có nhiều bot cùng polling
+# → Telegram trả lỗi 409 Conflict: terminated by other getUpdates request.
 services:
   - type: web
     name: hq88-telegram-bot
@@ -6,6 +8,7 @@ services:
     plan: starter
     region: singapore
     branch: main
+    numInstances: 1
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
