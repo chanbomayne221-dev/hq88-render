@@ -95,8 +95,8 @@ let historyChannelId: number | null = (() => {
   const cnt = (db.prepare("SELECT COUNT(*) as c FROM fake_bots").get() as any).c;
   if (cnt > 0) return;
   const defaults = [
-    { name: "Minh Tuấn 🎲", telegram_id: -1001, min_bet: 10000, max_bet: 80000, bet_types: "tai,xiu,chan,le" },
-    { name: "Thu Hà 🌸",    telegram_id: -1002, min_bet: 5000,  max_bet: 50000, bet_types: "tai,xiu" },
+    { name: "Minh Tuấn 🎲", telegram_id: 9728, min_bet: 10000, max_bet: 80000, bet_types: "tai,xiu,chan,le" },
+    { name: "Thu Hà 🌸",    telegram_id: 7871, min_bet: 5000,  max_bet: 50000, bet_types: "tai,xiu" },
   ];
   for (const b of defaults) {
     db.prepare("INSERT INTO users (telegram_id, first_name, balance, is_fake_bot) VALUES (?, ?, 50000000, 1) ON CONFLICT (telegram_id) DO NOTHING").run(b.telegram_id, b.name);
@@ -293,14 +293,14 @@ function getBetTotals(session: any) {
 
 function formatBetStatus(sessionNumber: number, secondsLeft: number, totals: any) {
   let msg =
-    `*⏳ Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
+    `*Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
     `*🔵 TÀI: ${formatNumber(totals.tai)}*\n` +
     `*🔴 XỈU: ${formatNumber(totals.xiu)}*\n\n` +
     `*⚪️ CHẴN: ${formatNumber(totals.chan)}*\n` +
     `*⚫️ LẺ: ${formatNumber(totals.le)}*`;
   const hasCombo = totals.tc > 0 || totals.tl > 0 || totals.xc > 0 || totals.xl > 0;
   if (hasCombo) {
-    msg += `\n\n**`;
+    msg += `\n\n`;
     if (totals.tc > 0) msg += `\n*  TC: ${formatNumber(totals.tc)}*`;
     if (totals.tl > 0) msg += `\n*  TL: ${formatNumber(totals.tl)}*`;
     if (totals.xc > 0) msg += `\n*  XC: ${formatNumber(totals.xc)}*`;
@@ -541,13 +541,15 @@ async function startSession(chatId: number, silent = false) {
   if (!silent) {
     try {
       await bot.sendMessage(chatId,
-        `*🎰 PHIÊN #${sessionNumber} — ĐẶT CƯỢC NGAY*\n` +
+`*Xin mời đặt cược phiên #${sessionNumber} *\n` +
         `*Min: ${formatNumber(MIN_BET)} | Max: ${formatNumber(MAX_BET)}*\n\n` +
-        `*T/X/C/L [tiền] — Tài/Xỉu/Chẵn/Lẻ*\n` +
-        `*TC/TL/XC/XL [tiền] — Kép (x3.5)*\n` +
-        `*SB[4-17] [tiền] — Đoán tổng (x5→x40)*\n` +
-        `*D[1-6] [tiền] — Đoán 1 viên (x2/x3/x4)*\n` +
-        `*D[n1][n2] [tiền] — Đoán 2 viên (x3)*`,
+        `*Cách chơi: [Cửa cược] [số tiền]*\n` +
+        `*Cửa cược: - T/X/C/L*\n` +
+        `*- TC, TL, XC, XL*\n` +
+        `*- D1, D2, ... D6*\n` +
+        `*VD: D5 MAX hoặc D5 20000*\n` + 
+        `*VD: TC MAX hoặc TC 20000*\n` +                   
+        `*VD: T MAX hoặc C 20000*`,
         { parse_mode: "Markdown" }
       );
     } catch (e: any) { console.error("startSession sendMessage error:", e.message); }
@@ -1676,7 +1678,7 @@ async function handlePrivateBet(msg: TelegramBot.Message, groupChatId: number, s
 
   // Xác nhận riêng cho người chơi
   await bot.sendMessage(chatId,
-    `✅ *Đặt cược thành công (ẩn danh)*\n\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – ${formatNumber(amount)}\n💰 Số dư còn lại: ${formatNumber(newBal)}`,
+    `✅ *Đặt cược thành công *\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – ${formatNumber(amount)(Ẩn danh)}\n💰 Số dư còn lại: ${formatNumber(newBal)}`,
     { parse_mode: "Markdown" }
   );
   return true;
