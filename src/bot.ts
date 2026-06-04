@@ -996,7 +996,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   }
   for (const { telegramId, betType, amount, currentBal } of loserMessages) {
     if (telegramId < 0) continue; // skip fake bots
-    try { await bot.sendMessage(telegramId, `❌ Thua −${formatNumber(amount)} (${betTypeName[betType] ?? betType}) phiên #${session.sessionNumber}\n💰 Số dư còn: ${formatNumber(currentBal)}`); } catch {}
+    try { await bot.sendMessage(telegramId, `❌ Thua −${formatNumber(amount)} (${betTypeName[betType] ?? betType})  phiên #${session.sessionNumber}\n💰 Số dư còn: ${formatNumber(currentBal)}`); } catch {}
   }
 
   await unlockChat(chatId);
