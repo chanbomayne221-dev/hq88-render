@@ -3410,38 +3410,49 @@ export async function startBot(): Promise<TelegramBot | null> {
         return;
       }
 
+      // ── Auto-reset state nếu text trông giống lệnh cược ──
+      // Trước đây các handler cược chỉ chạy khi state.step === "idle", nên nếu user
+      // còn dở một flow nào (ví dụ /nap, /rut, /chuyen, /setbank...) thì lệnh cược
+      // "T MAX", "X MAX", "SL MAX"... sẽ bị nuốt im lặng → "người được người không".
+      const BET_LIKE_REGEX = /^(SL|BR|TD|SB(?:3|4|5|6|7|8|9|1[0-8])|xxc|xxl|xxx|xxt|D[1-6][1-6]?|ttc|tll|xcc|xll|tt|xx|cc|ll|tc|tl|xc|xl|t(?:ai|ài|à)?|x(?:iu|ỉu|ỉ)?|c(?:han|hẵn|hăn)?|l(?:e|ẻ)?)\s+(max|\d[\d.,]*)\s*$/i;
+      const looksLikeBet = BET_LIKE_REGEX.test(text);
+      if (looksLikeBet && state.step !== "idle" && !state.step.startsWith("adm_")) {
+        resetState(telegramId);
+      }
+      const effIdle = state.step === "idle" || (looksLikeBet && !state.step.startsWith("adm_"));
+
       // ── Game Slot Machine từ chat riêng ──
-      if (state.step === "idle" && /^SL\s+(max|\d[\d.,]*)/i.test(text)) {
+      if (effIdle && /^SL\s+(max|\d[\d.,]*)\s*$/i.test(text)) {
         await handleSlGame(msg);
         return;
       }
 
       // ── Game Bóng rổ từ chat riêng ──
-      if (state.step === "idle" && /^BR\s+(max|\d[\d.,]*)/i.test(text)) {
+      if (effIdle && /^BR\s+(max|\d[\d.,]*)\s*$/i.test(text)) {
         await handleBrGame(msg);
         return;
       }
 
       // ── Game Đoán tổng 3 xúc xắc (SB) từ chat riêng ──
-      if (state.step === "idle" && /^SB(3|4|5|6|7|8|9|1[0-8])\s+(max|\d[\d.,]*)/i.test(text)) {
+      if (effIdle && /^SB(3|4|5|6|7|8|9|1[0-8])\s+(max|\d[\d.,]*)\s*$/i.test(text)) {
         await handleSbGame(msg);
         return;
       }
 
       // ── Game Xúc xắc Telegram (XX) từ chat riêng ──
-      if (state.step === "idle" && /^(xxc|xxl|xxx|xxt)\s+(max|\d[\d.,]*)/i.test(text)) {
+      if (effIdle && /^(xxc|xxl|xxx|xxt)\s+(max|\d[\d.,]*)\s*$/i.test(text)) {
         await handleXxGame(msg);
         return;
       }
 
       // ── Game Trên/Dưới từ chat riêng ──
-      if (state.step === "idle" && /^TD\s+(max|\d[\d.,]*)/i.test(text)) {
+      if (effIdle && /^TD\s+(max|\d[\d.,]*)\s*$/i.test(text)) {
         await handleTdGame(msg);
         return;
       }
 
       // ── Cược ẩn danh từ chat riêng ──
-      if (state.step === "idle" && BET_REGEX.test(text)) {
+      if (effIdle && BET_REGEX.test(text)) {
         // Tìm session đang chạy, hoặc tạo mới cho nhóm đầu tiên đang bật game
         let activeFound = findActiveSession(chatId);
         if (!activeFound) {
