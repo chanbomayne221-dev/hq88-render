@@ -293,14 +293,14 @@ function getBetTotals(session: any) {
 
 function formatBetStatus(sessionNumber: number, secondsLeft: number, totals: any) {
   let msg =
-    `*Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
+    `*⏳ Còn ${secondsLeft} giây phiên #${sessionNumber}*\n` +
     `*🔵 TÀI: ${formatNumber(totals.tai)}*\n` +
     `*🔴 XỈU: ${formatNumber(totals.xiu)}*\n\n` +
     `*⚪️ CHẴN: ${formatNumber(totals.chan)}*\n` +
     `*⚫️ LẺ: ${formatNumber(totals.le)}*`;
   const hasCombo = totals.tc > 0 || totals.tl > 0 || totals.xc > 0 || totals.xl > 0;
   if (hasCombo) {
-    msg += `\n\n========`;
+    msg += `\n\n**`;
     if (totals.tc > 0) msg += `\n*  TC: ${formatNumber(totals.tc)}*`;
     if (totals.tl > 0) msg += `\n*  TL: ${formatNumber(totals.tl)}*`;
     if (totals.xc > 0) msg += `\n*  XC: ${formatNumber(totals.xc)}*`;
@@ -541,15 +541,13 @@ async function startSession(chatId: number, silent = false) {
   if (!silent) {
     try {
       await bot.sendMessage(chatId,
-        `*Xin mời đặt cược phiên #${sessionNumber} *\n` +
+        `*🎰 PHIÊN #${sessionNumber} — ĐẶT CƯỢC NGAY*\n` +
         `*Min: ${formatNumber(MIN_BET)} | Max: ${formatNumber(MAX_BET)}*\n\n` +
-        `*Cách chơi: [Cửa cược] [số tiền]*\n` +
-        `*Cửa cược: - T/X/C/L*\n` +
-        `*- TC, TL, XC, XL*\n` +
-        `*- D1, D2, ... D6*\n` +
-        `*VD: D5 MAX hoặc D5 20000*\n` + 
-        `*VD: TC MAX hoặc TC 20000*\n` +                   
-        `*VD: T MAX hoặc C 20000*`,
+        `*T/X/C/L [tiền] — Tài/Xỉu/Chẵn/Lẻ*\n` +
+        `*TC/TL/XC/XL [tiền] — Kép (x3.5)*\n` +
+        `*SB[4-17] [tiền] — Đoán tổng (x5→x40)*\n` +
+        `*D[1-6] [tiền] — Đoán 1 viên (x2/x3/x4)*\n` +
+        `*D[n1][n2] [tiền] — Đoán 2 viên (x3)*`,
         { parse_mode: "Markdown" }
       );
     } catch (e: any) { console.error("startSession sendMessage error:", e.message); }
@@ -870,17 +868,17 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   let resultLabel: string;
   let resultColorEmojis: string;
   resultLabel = `${isTai ? "TÀI" : "XỈU"} ${isChan ? "CHẴN" : "LẺ"}`;
-  resultColorEmojis = `${isTai ? "🔵" : "🔴} ${isChan ? "⚪️" : "⚫️"}`;
+  resultColorEmojis = `${isTai ? "🔵" : "🔴"} ${isChan ? "⚪️" : "⚫️"}`;
 
   const resultMsg =
     `<b>Kết quả phiên #${session.sessionNumber}</b>\n` +
-    `┏━━━━━━━━━━━━━━━━┓\n` +
-    `┃<b>${d1}  ${d2}  ${d3}</b>  👉 <b>${resultLabel} ${resultColorEmojis}</b>\n┃\n` +
+    `┏━━━━━━━━━━━━━━━━━━┓\n` +
+    `┃  <b>${d1}  ${d2}  ${d3}</b>  👉 <b>${resultLabel} ${resultColorEmojis}</b>\n┃\n` +
     `┃ Tổng thắng: <b>${formatNumber(totalWinPayout)}</b>\n` +
     `┃ Tổng thua: <b>${formatNumber(totalLossBet)}</b>\n` +
     `┃ Cộng hũ  : <b>+${formatNumber(huContrib)}</b>\n` +
     `┃ Hũ hiện tại: <b>${formatNumber(jackpotAmount)}</b>\n` +
-    `┗━━━━━━━━━━━━━━━━┛`;
+    `┗━━━━━━━━━━━━━━━━━━┛`;
 
   const historyHtml = taiXiuRow
     ? `\n<blockquote><b>Thống kê kết quả gần đây:</b>\n\n${taiXiuRow}\n${chanLeRow}</blockquote>`
@@ -996,7 +994,7 @@ async function endSession(chatId: number, sessionId: number, forceDice?: [number
   }
   for (const { telegramId, betType, amount, currentBal } of loserMessages) {
     if (telegramId < 0) continue; // skip fake bots
-    try { await bot.sendMessage(telegramId, `❌ Thua −${formatNumber(amount)} (${betTypeName[betType] ?? betType})  phiên #${session.sessionNumber}\n💰 Số dư còn: ${formatNumber(currentBal)}`); } catch {}
+    try { await bot.sendMessage(telegramId, `❌ Bạn THUA −${formatNumber(amount)} (${betTypeName[betType] ?? betType}) phiên #${session.sessionNumber}\n💰 Số dư: ${formatNumber(currentBal)}`); } catch {}
   }
 
   await unlockChat(chatId);
@@ -1678,7 +1676,7 @@ async function handlePrivateBet(msg: TelegramBot.Message, groupChatId: number, s
 
   // Xác nhận riêng cho người chơi
   await bot.sendMessage(chatId,
-    `✅ *Đặt cược thành công *\n🎰 Phiên #${session.sessionNumber}(Ẩn danh)\n${betTypeLabel[betType]} – ${formatNumber(amount)}\n Số dư còn lại: ${formatNumber(newBal)}`,
+    `✅ *Đặt cược thành công (ẩn danh)*\n\n🎰 Phiên #${session.sessionNumber}\n${betTypeLabel[betType]} – ${formatNumber(amount)}\n💰 Số dư còn lại: ${formatNumber(newBal)}`,
     { parse_mode: "Markdown" }
   );
   return true;
@@ -2867,7 +2865,7 @@ export async function startBot(): Promise<TelegramBot | null> {
       const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
       if (!isAdmin(telegramId)) {
         if (!hasFirstDeposit(user)) {
-          await bot.sendMessage(chatId, `❌ Bạn cần nạp tối thiểu 30.000đ để mua code.`);
+          await bot.sendMessage(chatId, `❌ Bạn cần nạp tối thiểu 20.000đ để mua code.`);
           return;
         }
         const wagerLeft = getWagerRequired(user.id);
