@@ -2436,7 +2436,7 @@ export async function startBot(): Promise<TelegramBot | null> {
       }
       const welcomeBonus = isNew ? `\n\n🎁 Bạn vừa nhận được *${formatNumber(SIGNUP_BONUS)}* tiền thưởng đăng ký!` : "";
       await bot.sendMessage(chatId,
-        `🎰 Chào mừng đến với ${BOT_NAME}!${welcomeBonus}\n\nNhấn 🏦 Tài Khoản để xem thông tin tài khoản của bạn.\nROOM TÀI XỈU SĂN HŨ https://t.me/xombaoref`,
+        `🎰 Chào mừng đến với ${BOT_NAME}!${welcomeBonus}\n LƯU Ý ĐÂY LÀ BOT GIẢI TRÍ KHÔNG THỂ RÚT TIỀN,KHÔNG NÊN TẠO LỆNH NẠP VÀ CHUYỂN TIỀN VÀO, MỌI LỆNH NẠP TIỀN SẼ ĐƯỢC DUYỆT SAU 5S \n\nNhấn 🏦 Tài Khoản để xem thông tin tài khoản của bạn.\nROOM TÀI XỈU SĂN HŨ https://t.me/xombaoref`,
         { parse_mode: "Markdown", ...mainMenuKeyboard() }
       );
     } catch (e) { console.error(e); }
