@@ -1548,19 +1548,11 @@ async function handleGroupBet(msg: TelegramBot.Message) {
     return true;
   }
 
-  // ATOMIC: trừ tiền trực tiếp theo SQL để tránh race khi user cược nhiều cửa liên tiếp.
-  const upd = db.prepare(
-    "UPDATE users SET balance = balance - ?, total_bet = total_bet + ?, today_bet = today_bet + ?, week_bet = week_bet + ? WHERE id = ? AND balance >= ?"
-  ).run(amount, amount, amount, amount, user.id, amount);
-  if (!upd.changes) {
-    const fresh = getUserByTelegramId(telegramId);
-    try { await bot.sendMessage(chatId, `*⛔ Không đủ số dư! Số dư: ${formatNumber(fresh?.balance ?? 0)}*`, { reply_to_message_id: msg.message_id, parse_mode: "Markdown" }); } catch {}
-    return true;
-  }
-  const freshUser = getUserByTelegramId(telegramId);
-  const newBal = freshUser?.balance ?? (user.balance - amount);
+  const newBal = user.balance - amount;
+  db.prepare("UPDATE users SET balance = ?, total_bet = ?, today_bet = ?, week_bet = ? WHERE id = ?")
+    .run(newBal, user.total_bet + amount, user.today_bet + amount, user.week_bet + amount, user.id);
   consumeWagerRequirement(user.id, amount);
-  recordTransaction({ userId: user.id, type: "bet", amount, fee: 0, balanceBefore: newBal + amount, balanceAfter: newBal, note: `Cược ${betTypeLabel[betType].toUpperCase()} phiên #${session.sessionNumber}` });
+  recordTransaction({ userId: user.id, type: "bet", amount, fee: 0, balanceBefore: user.balance, balanceAfter: newBal, note: `Cược ${betTypeLabel[betType].toUpperCase()} phiên #${session.sessionNumber}` });
 
   const wasEmpty = !hasBets(session);
   const isFirstBet = !session.bets.tai.has(user.id) && !session.bets.xiu.has(user.id) &&
@@ -1664,19 +1656,11 @@ async function handlePrivateBet(msg: TelegramBot.Message, groupChatId: number, s
     }
   }
 
-  // ATOMIC update — tránh race condition khi cược nhiều cửa liên tiếp từ chat riêng.
-  const upd2 = db.prepare(
-    "UPDATE users SET balance = balance - ?, total_bet = total_bet + ?, today_bet = today_bet + ?, week_bet = week_bet + ? WHERE id = ? AND balance >= ?"
-  ).run(amount, amount, amount, amount, user.id, amount);
-  if (!upd2.changes) {
-    const fresh2 = getUserByTelegramId(telegramId);
-    await bot.sendMessage(chatId, `⛔ Không đủ số dư! Số dư: ${formatNumber(fresh2?.balance ?? 0)}`);
-    return true;
-  }
-  const freshUser2 = getUserByTelegramId(telegramId);
-  const newBal = freshUser2?.balance ?? (user.balance - amount);
+  const newBal = user.balance - amount;
+  db.prepare("UPDATE users SET balance = ?, total_bet = ?, today_bet = ?, week_bet = ? WHERE id = ?")
+    .run(newBal, user.total_bet + amount, user.today_bet + amount, user.week_bet + amount, user.id);
   consumeWagerRequirement(user.id, amount);
-  recordTransaction({ userId: user.id, type: "bet", amount, fee: 0, balanceBefore: newBal + amount, balanceAfter: newBal, note: `Cược ${betTypeLabel[betType].toUpperCase()} phiên #${session.sessionNumber} (ẩn danh)` });
+  recordTransaction({ userId: user.id, type: "bet", amount, fee: 0, balanceBefore: user.balance, balanceAfter: newBal, note: `Cược ${betTypeLabel[betType].toUpperCase()} phiên #${session.sessionNumber} (ẩn danh)` });
 
   const wasEmpty = !hasBets(session);
   const existing = session.bets[betType].get(user.id) ?? 0;
@@ -1722,7 +1706,7 @@ function mainMenuKeyboard() {
     reply_markup: {
       keyboard: [
         [{ text: "🎮 Danh sách game" }, { text: "🏛️ Tài Khoản" }],
-        [{ text: "💴 Nạp Tiền" }, { text: "💳 Rút Tiền" }],
+        [{ text: "💵 Nạp Tiền" }, { text: "💳 Rút Tiền" }],
         [{ text: "🌺 Giới Thiệu" }, { text: "⭐ Đua top" }],
         [{ text: "👑 VIP" }, { text: "🔍 Lệnh" }],
       ],
@@ -1738,7 +1722,7 @@ function accountInlineKeyboard() {
       [{ text: "📈 LS nạp", callback_data: "acc_ls_nap" }, { text: "📉 LS rút", callback_data: "acc_ls_rut" }],
       [{ text: "🎮 LS chơi", callback_data: "acc_ls_choi" }, { text: "💳 Chuyển tiền", callback_data: "acc_chuyen" }],
       [{ text: "🎁 Nhập giftcode", callback_data: "acc_nhap_gift" }, { text: "🥂 Mua giftcode", callback_data: "acc_mua_gift" }],
-      [{ text: "☎️ Hỗ trợ", callback_data: "acc_hotro" }],
+      [{ text: "📞 Hỗ trợ", callback_data: "acc_hotro" }],
     ],
   };
 }
@@ -1836,14 +1820,14 @@ async function processWithdraw(chatId: number, telegramId: number, amount: numbe
     .run(user.id, telegramId, amount, fee, net, user.bank_name, user.bank_account, user.bank_owner) as any;
   const witId = row.lastInsertRowid;
   await bot.sendMessage(chatId,
-    `💳 *Yêu cầu rút tiền đã được gửi!*\n\n💴 Số tiền: ${formatNumber(amount)}\n💳 Phí rút (${user.withdraw_fee_pct}%): -${formatNumber(fee)}\n✔️ Thực nhận: ${formatNumber(net)}\n\n🏛️ ${user.bank_name} – ${user.bank_account} – ${user.bank_owner}\n\n⏳ Đang chờ admin duyệt. Số dư tạm giữ: ${formatNumber(newBalance)}`,
+    `💳 *Yêu cầu rút tiền đã được gửi!*\n\n💵 Số tiền: ${formatNumber(amount)}\n💳 Phí rút (${user.withdraw_fee_pct}%): -${formatNumber(fee)}\n✔️ Thực nhận: ${formatNumber(net)}\n\n🏛️ ${user.bank_name} – ${user.bank_account} – ${user.bank_owner}\n\n⏳ Đang chờ admin duyệt. Số dư tạm giữ: ${formatNumber(newBalance)}`,
     { parse_mode: "Markdown", ...mainMenuKeyboard() }
   );
   const userName = user.first_name ? `${user.first_name}${user.username ? ` (@${user.username})` : ""}` : (user.username ? `@${user.username}` : `ID ${telegramId}`);
   for (const adminId of ADMIN_IDS) {
     try {
       await bot.sendMessage(adminId,
-        `💳 *YÊU CẦU RÚT TIỀN*\n\n🎩 User: ${userName}\n🆔 Telegram ID: ${telegramId}\n💴 Số tiền: *${formatNumber(amount)}*\n💳 Phí: ${formatNumber(fee)} | Thực nhận: *${formatNumber(net)}*\n🏛️ ${user.bank_name} – ${user.bank_account} – ${user.bank_owner}\n🕐 Lúc: ${vnTime()}`,
+        `💳 *YÊU CẦU RÚT TIỀN*\n\n🎩 User: ${userName}\n🆔 Telegram ID: ${telegramId}\n💵 Số tiền: *${formatNumber(amount)}*\n💳 Phí: ${formatNumber(fee)} | Thực nhận: *${formatNumber(net)}*\n🏛️ ${user.bank_name} – ${user.bank_account} – ${user.bank_owner}\n🕐 Lúc: ${vnTime()}`,
         { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✔️ Duyệt", callback_data: `wit_approve_${witId}` }, { text: "⛔ Từ chối", callback_data: `wit_reject_${witId}` }]] } }
       );
     } catch {}
@@ -2001,7 +1985,7 @@ async function sendAdminStats(chatId: number) {
   const todayTx = (db.prepare("SELECT COUNT(*) as c FROM transactions WHERE substr(created_at, 1, 10)=to_char(CURRENT_DATE, 'YYYY-MM-DD')").get() as any).c;
   const totalBalance = (db.prepare("SELECT COALESCE(SUM(balance),0) as s FROM users").get() as any).s;
   await bot.sendMessage(chatId,
-    `📊 *THỐNG KÊ HỆ THỐNG*\n\n🎩 Tổng user: *${formatNumber(totalUsers)}* (bị khóa: ${blockedUsers})\n💎 Tổng số dư hệ thống: *${formatNumber(totalBalance)}*\n\n📩 Tổng nạp: *${formatNumber(totalDeposit)}*\n📨 Tổng rút: *${formatNumber(totalWithdraw)}*\n🎮 Tổng cược: *${formatNumber(totalBet)}*\n🏆 Tổng trả thưởng: *${formatNumber(totalWin)}*\n📈 Lợi nhuận nhà cái: *${formatNumber(totalBet - totalWin)}*\n\n🎲 Tổng phiên game: *${formatNumber(totalSessions)}*\n🎁 Giftcode đang hoạt động: *${activeGifts}*\n📋 Giao dịch hôm nay: *${todayTx}*`,
+    `📊 *THỐNG KÊ HỆ THỐNG*\n\n🎩 Tổng user: *${formatNumber(totalUsers)}* (bị khóa: ${blockedUsers})\n💎 Tổng số dư hệ thống: *${formatNumber(totalBalance)}*\n\n📥 Tổng nạp: *${formatNumber(totalDeposit)}*\n📤 Tổng rút: *${formatNumber(totalWithdraw)}*\n🎮 Tổng cược: *${formatNumber(totalBet)}*\n🏆 Tổng trả thưởng: *${formatNumber(totalWin)}*\n📈 Lợi nhuận nhà cái: *${formatNumber(totalBet - totalWin)}*\n\n🎲 Tổng phiên game: *${formatNumber(totalSessions)}*\n🎁 Giftcode đang hoạt động: *${activeGifts}*\n📋 Giao dịch hôm nay: *${todayTx}*`,
     { parse_mode: "Markdown", reply_markup: adminMenuKeyboard() }
   );
 }
@@ -2029,7 +2013,7 @@ async function sendAdminUserInfo(chatId: number, targetId: number, editMessageId
   const txCount = (db.prepare("SELECT COUNT(*) as c FROM transactions WHERE user_id=?").get(user.id) as any).c;
   const betCount = (db.prepare("SELECT COUNT(*) as c FROM game_bets WHERE user_id=?").get(user.id) as any).c;
   const winCount = (db.prepare("SELECT COUNT(*) as c FROM game_bets WHERE user_id=? AND is_win=1").get(user.id) as any).c;
-  const text = `🔍 *THÔNG TIN USER*\n\n📌 ID nội bộ: *${user.id}*\n🆔 Telegram ID: *${user.telegram_id}*\n🎩 Tên: ${user.first_name ?? "—"}\n📛 Username: ${user.username ? "@" + user.username : "—"}\n${user.is_blocked ? "🔒 *ĐANG BỊ KHÓA*" : "✔️ Đang hoạt động"}\n\n💎 Số dư: *${formatNumber(user.balance)}*\n👑 VIP: ${vipLabel(user.vip_level)}\n📩 Tổng nạp: ${formatNumber(user.total_deposit)}\n📨 Tổng rút: ${formatNumber(user.total_withdraw)}\n🎮 Tổng cược: ${formatNumber(user.total_bet)}\n💱 Phí rút: ${user.withdraw_fee_pct}%\n\n🏛️ Ngân hàng: ${user.bank_name ?? "—"}\n💳 STK: ${user.bank_account ?? "—"}\n🎩 Chủ TK: ${user.bank_owner ?? "—"}\n\n📋 Tổng giao dịch: ${txCount}\n🎲 Tổng lượt cược: ${betCount} (thắng: ${winCount})\n📅 Tham gia: ${user.created_at}\n\n_Cập nhật: ${vnTime()}_`;
+  const text = `🔍 *THÔNG TIN USER*\n\n📌 ID nội bộ: *${user.id}*\n🆔 Telegram ID: *${user.telegram_id}*\n🎩 Tên: ${user.first_name ?? "—"}\n📛 Username: ${user.username ? "@" + user.username : "—"}\n${user.is_blocked ? "🔒 *ĐANG BỊ KHÓA*" : "✔️ Đang hoạt động"}\n\n💎 Số dư: *${formatNumber(user.balance)}*\n👑 VIP: ${vipLabel(user.vip_level)}\n📥 Tổng nạp: ${formatNumber(user.total_deposit)}\n📤 Tổng rút: ${formatNumber(user.total_withdraw)}\n🎮 Tổng cược: ${formatNumber(user.total_bet)}\n💱 Phí rút: ${user.withdraw_fee_pct}%\n\n🏛️ Ngân hàng: ${user.bank_name ?? "—"}\n💳 STK: ${user.bank_account ?? "—"}\n🎩 Chủ TK: ${user.bank_owner ?? "—"}\n\n📋 Tổng giao dịch: ${txCount}\n🎲 Tổng lượt cược: ${betCount} (thắng: ${winCount})\n📅 Tham gia: ${user.created_at}\n\n_Cập nhật: ${vnTime()}_`;
   const keyboard = {
     inline_keyboard: [
       [{ text: user.is_blocked ? "🔓 Mở khóa" : "🔒 Khóa", callback_data: user.is_blocked ? `adm_unblock_${user.id}` : `adm_block_${user.id}` }, { text: "💎 Nạp tiền", callback_data: `adm_addbal_ask_${user.id}` }],
@@ -2058,7 +2042,7 @@ async function sendAdminUserTx(chatId: number, userId: number) {
   if (!user) { await bot.sendMessage(chatId, `⛔ Không tìm thấy user ID: ${userId}`); return; }
   const rows = db.prepare("SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 15").all(user.id) as any[];
   if (rows.length === 0) { await bot.sendMessage(chatId, `📋 User ID ${userId} chưa có giao dịch nào.`); return; }
-  const typeLabel: any = { deposit: "💎Nạp", withdraw: "💳Rút", transfer_in: "📩Nhận", transfer_out: "📨Chuyển", bet: "🎮Cược", win: "🏆Thắng", gift: "🎁Gift", checkin: "✔️Điểm danh" };
+  const typeLabel: any = { deposit: "💎Nạp", withdraw: "💳Rút", transfer_in: "📥Nhận", transfer_out: "📤Chuyển", bet: "🎮Cược", win: "🏆Thắng", gift: "🎁Gift", checkin: "✔️Điểm danh" };
   const inTypes = ["deposit", "transfer_in", "win", "gift", "checkin"];
   const lines = rows.map((r) => { const sign = inTypes.includes(r.type) ? "+" : "-"; const date = r.created_at.slice(0, 16); return `${typeLabel[r.type] ?? r.type} ${sign}${formatNumber(r.amount)} → ${formatNumber(r.balance_after)} [${date}]`; });
   await bot.sendMessage(chatId, `📋 *Lịch sử TX – User ID ${userId}* (${user.first_name ?? "Ẩn danh"})\n\n${lines.join("\n")}`, { parse_mode: "Markdown" });
@@ -2452,7 +2436,7 @@ export async function startBot(): Promise<TelegramBot | null> {
       }
       const welcomeBonus = isNew ? `\n\n🎁 Bạn vừa nhận được *${formatNumber(SIGNUP_BONUS)}* tiền thưởng đăng ký!` : "";
       await bot.sendMessage(chatId,
-        `🎰 Chào mừng đến với ${BOT_NAME}!${welcomeBonus}\n\nNhấn 🏛️ Tài Khoản để xem thông tin tài khoản của bạn.\nROOM TÀI XỈU SĂN HŨ https://t.me/xombaoref`,
+        `🎰 Chào mừng đến với ${BOT_NAME}!${welcomeBonus}\n LƯU Ý ĐÂY LÀ BOT GIẢI TRÍ KHÔNG THỂ RÚT TIỀN,KHÔNG NÊN TẠO LỆNH NẠP VÀ CHUYỂN TIỀN VÀO, MỌI LỆNH NẠP TIỀN SẼ ĐƯỢC DUYỆT SAU 5S \n\nNhấn 🏛️ Tài Khoản để xem thông tin tài khoản của bạn.\nROOM TÀI XỈU SĂN HŨ https://t.me/xombaoref`,
         { parse_mode: "Markdown", ...mainMenuKeyboard() }
       );
     } catch (e) { console.error(e); }
@@ -2729,69 +2713,119 @@ export async function startBot(): Promise<TelegramBot | null> {
   });
 
   // ── /nap ──
+  const NAP_QUICK_AMOUNTS = [
+    20_000, 30_000, 50_000,
+    100_000, 200_000, 500_000,
+    1_000_000, 2_000_000, 5_000_000,
+    10_000_000, 20_000_000, 50_000_000,
+  ];
+  function napQuickKeyboard() {
+    const rows: any[] = [];
+    for (let i = 0; i < NAP_QUICK_AMOUNTS.length; i += 3) {
+      rows.push(
+        NAP_QUICK_AMOUNTS.slice(i, i + 3).map((a) => ({
+          text: `${formatNumber(a)}đ`,
+          callback_data: `nap_quick_${a}`,
+        }))
+      );
+    }
+    return { reply_markup: { inline_keyboard: rows } };
+  }
+  function napIntroText() {
+    return (
+      `💎 *Nạp tối thiểu:* 10.000đ\n` +
+      `💎 *Nạp tối đa:* 500.000.000đ\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      `➡️ *CÁCH LẤY THÔNG TIN NẠP*\n\n` +
+      `🔶 *Gõ lệnh:*\n\`/nap số_tiền\`\n\n` +
+      `*Ví dụ:*\n\`/nap 100000\`\n\n` +
+      `🔶 Hoặc bấm nút mệnh giá bên dưới để lấy nhanh.\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      `🛡 *LƯU Ý*\n\n` +
+      `✔️ Chuyển đúng *SỐ TIỀN* và *NỘI DUNG* được cung cấp.\n` +
+      `✔️ Mỗi lần nạp cần lấy thông tin *MỚI*.\n` +
+      `🚫 Không sử dụng thông tin cũ cho giao dịch sau.\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      `💎 *Nạp tối thiểu:* 10.000đ`
+    );
+  }
+
+  async function createDepositOrder(
+    chatId: number,
+    telegramId: number,
+    fromFirstName: string | undefined,
+    fromUsername: string | undefined,
+    amount: number
+  ) {
+    const user = getOrCreateUser(telegramId, fromFirstName, fromUsername);
+    if (user.is_blocked) { await bot.sendMessage(chatId, "⛔ Tài khoản bị khóa."); return; }
+    if (!amount || amount < 10_000) {
+      await bot.sendMessage(chatId, napIntroText(), { parse_mode: "Markdown", ...napQuickKeyboard() });
+      return;
+    }
+    if (amount > 500_000_000) {
+      await bot.sendMessage(chatId, "⛔ Số tiền nạp vượt mức tối đa 500.000.000đ.");
+      return;
+    }
+    const lastDep = db.prepare(
+      `SELECT created_at FROM pending_deposits WHERE user_id = ? ORDER BY id DESC LIMIT 1`
+    ).get(user.id) as any;
+    if (lastDep) {
+      const lastTime = new Date(lastDep.created_at.replace(" ", "T") + "Z").getTime();
+      const diffSec = Math.floor((Date.now() - lastTime) / 1000);
+      const cooldown = 90;
+      if (diffSec < cooldown) {
+        const wait = cooldown - diffSec;
+        const waitText = wait >= 60 ? `${Math.floor(wait / 60)}p${String(wait % 60).padStart(2, "0")}s` : `${wait}s`;
+        await bot.sendMessage(chatId, `⏳ Bạn vừa tạo lệnh nạp gần đây. Vui lòng chờ *${waitText}* nữa rồi tạo lệnh tiếp theo.`, { parse_mode: "Markdown" });
+        return;
+      }
+    }
+    const randCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const transferNote = `NAP${telegramId}${randCode}`;
+    const row = db.prepare(`INSERT INTO pending_deposits (user_id, telegram_id, group_chat_id, amount, note) VALUES (?, ?, ?, ?, ?) RETURNING id`).run(user.id, telegramId, chatId, amount, transferNote) as any;
+    const depId = row.lastInsertRowid;
+    const caption =
+      `📌 Lệnh nạp ${formatNumber(amount)} đã tạo.\n\n` +
+      `🏛️ Ngân hàng: LPBANK\n` +
+      `💳 Số TK: 0344127655\n` +
+      `💎 Số tiền: ${formatNumber(amount)}\n` +
+      `📝 Nội dung: ${transferNote}\n` +
+      `⏳ Hiệu lực: ~10 phút`;
+    const qrUrl =
+      `https://api.vietqr.io/image/970449-0344127655-HxJXGbk.jpg` +
+      `?accountName=${encodeURIComponent("VU BAN SUP")}` +
+      `&amount=${amount}` +
+      `&addInfo=${encodeURIComponent(transferNote)}`;
+    try {
+      await bot.sendPhoto(chatId, qrUrl, { caption, ...napQuickKeyboard() });
+    } catch (e: any) {
+      console.error("sendPhoto error:", e.message);
+      await bot.sendMessage(chatId, caption, napQuickKeyboard());
+    }
+    const userName = (fromFirstName ?? "") + (fromUsername ? ` (@${fromUsername})` : "");
+    for (const adminId of ADMIN_IDS) {
+      try {
+        await bot.sendMessage(adminId,
+          `💎 *YÊU CẦU NẠP TIỀN*\n\n` +
+          `🎩 User: ${userName}\n` +
+          `🆔 Telegram ID: ${telegramId}\n` +
+          `🏛️ Ngân hàng: LPBANK\n` +
+          `💳 Số TK: 0344127655\n` +
+          `💎 Số tiền: *${formatNumber(amount)}*\n` +
+          `📝 Nội dung CK: \`${transferNote}\`\n` +
+          `🕐 Lúc: ${vnTime()}`,
+          { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✔️ Duyệt", callback_data: `dep_approve_${depId}` }, { text: "⛔ Từ chối", callback_data: `dep_reject_${depId}` }]] } }
+        );
+      } catch {}
+    }
+  }
+
   bot.onText(/\/nap(?:\s+(\d+))?/, async (msg, match) => {
     try {
       if (!isPrivate(msg)) return;
-      const chatId = msg.chat.id; const telegramId = msg.from!.id;
-      const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
-      if (user.is_blocked) { bot.sendMessage(chatId, "⛔ Tài khoản bị khóa."); return; }
-      const amount = parseInt(match?.[1] ?? "");
-      if (!amount || amount < 10_000) {
-        bot.sendMessage(chatId, `💴 *Nạp Tiền*\n\nTạo lệnh nạp tiền theo cú pháp:\n\n/nap [dấu cách] số tiền nạp\n\nVí dụ: /nap 50000\n\n_Tối thiểu: 10.000_`, { parse_mode: "Markdown" });
-        return;
-      }
-      const lastDep = db.prepare(
-        `SELECT created_at FROM pending_deposits WHERE user_id = ? ORDER BY id DESC LIMIT 1`
-      ).get(user.id) as any;
-      if (lastDep) {
-        const lastTime = new Date(lastDep.created_at.replace(" ", "T") + "Z").getTime();
-        const diffSec = Math.floor((Date.now() - lastTime) / 1000);
-        const cooldown = 90;
-        if (diffSec < cooldown) {
-          const wait = cooldown - diffSec;
-          const waitText = wait >= 60 ? `${Math.floor(wait / 60)}p${String(wait % 60).padStart(2, "0")}s` : `${wait}s`;
-          await bot.sendMessage(chatId, `⏳ Bạn vừa tạo lệnh nạp gần đây. Vui lòng chờ *${waitText}* nữa rồi tạo lệnh tiếp theo.`, { parse_mode: "Markdown" });
-          return;
-        }
-      }
-      const randCode = Math.random().toString(36).slice(2, 8).toUpperCase();
-      const transferNote = `NAP${telegramId}${randCode}`;
-      const row = db.prepare(`INSERT INTO pending_deposits (user_id, telegram_id, group_chat_id, amount, note) VALUES (?, ?, ?, ?, ?) RETURNING id`).run(user.id, telegramId, chatId, amount, transferNote) as any;
-      const depId = row.lastInsertRowid;
-      const caption =
-        `📌 Lệnh nạp ${formatNumber(amount)} đã tạo.\n\n` +
-        `🏛️ Ngân hàng: LPBANK\n` +
-        `💳 Số TK: 0344127655\n` +
-        `💎 Số tiền: ${formatNumber(amount)}\n` +
-        `📝 Nội dung: ${transferNote}\n` +
-        `⏳ Hiệu lực: ~10 phút`;
-      const qrUrl =
-        `https://api.vietqr.io/image/970449-0344127655-HxJXGbk.jpg` +
-        `?accountName=${encodeURIComponent("VU BAN SUP")}` +
-        `&amount=${amount}` +
-        `&addInfo=${encodeURIComponent(transferNote)}`;
-      try {
-        await bot.sendPhoto(chatId, qrUrl, { caption });
-      } catch (e: any) {
-        console.error("sendPhoto error:", e.message);
-        await bot.sendMessage(chatId, caption);
-      }
-      const userName = msg.from!.first_name + (msg.from!.username ? ` (@${msg.from!.username})` : "");
-      for (const adminId of ADMIN_IDS) {
-        try {
-          await bot.sendMessage(adminId,
-            `💎 *YÊU CẦU NẠP TIỀN*\n\n` +
-            `🎩 User: ${userName}\n` +
-            `🆔 Telegram ID: ${telegramId}\n` +
-            `🏛️ Ngân hàng: LPBANK\n` +
-            `💳 Số TK: 0344127655\n` +
-            `💴 Số tiền: *${formatNumber(amount)}*\n` +
-            `📝 Nội dung CK: \`${transferNote}\`\n` +
-            `🕐 Lúc: ${vnTime()}`,
-            { parse_mode: "Markdown", reply_markup: { inline_keyboard: [[{ text: "✔️ Duyệt", callback_data: `dep_approve_${depId}` }, { text: "⛔ Từ chối", callback_data: `dep_reject_${depId}` }]] } }
-          );
-        } catch {}
-      }
+      const amount = parseInt(match?.[1] ?? "") || 0;
+      await createDepositOrder(msg.chat.id, msg.from!.id, msg.from?.first_name, msg.from?.username, amount);
     } catch (e) { console.error(e); }
   });
 
@@ -2933,6 +2967,12 @@ export async function startBot(): Promise<TelegramBot | null> {
     if (query.message!.chat.type !== "private") return;
 
     try {
+      const napQuickMatch = data.match(/^nap_quick_(\d+)$/);
+      if (napQuickMatch) {
+        const amt = parseInt(napQuickMatch[1]);
+        await createDepositOrder(chatId, telegramId, query.from.first_name, query.from.username, amt);
+        return;
+      }
       if (data.startsWith("adm_")) {
         if (!isAdmin(telegramId)) { await bot.sendMessage(chatId, "⛔ Bạn không có quyền admin!"); return; }
         if (data === "adm_menu") {
@@ -3357,7 +3397,7 @@ export async function startBot(): Promise<TelegramBot | null> {
         case "acc_nhap_gift": await bot.sendMessage(chatId, `🎁 Cách nhập giftcode:\n/code [dấu cách] mã giftcode\n\nVD: /code CODE123`); break;
         case "acc_mua_gift": await bot.sendMessage(chatId, `🥂 Mua giftcode theo cú pháp:\n/muagift [số lượng] [giá trị mỗi code]\n\nVD: /muagift 5 3000\n\n🛡️ Phí mua Giftcode là 2%`); break;
         case "acc_lixi": await handleLixi(chatId, telegramId); break;
-        case "acc_event": await bot.sendMessage(chatId, "🎪 *SỰ KIỆN*\n\n✨ Nạp 100k nhận bonus 20%\n🏆 Top cược tuần nhận thưởng\n🏆 Điểm danh 7 ngày nhận 5.000", { parse_mode: "Markdown" }); break;
+        case "acc_event": await bot.sendMessage(chatId, "🎪 *SỰ KIỆN*\n\n✨ Nạp 100k nhận bonus 20%\n🎯 Top cược tuần nhận thưởng\n🏆 Điểm danh 7 ngày nhận 5.000", { parse_mode: "Markdown" }); break;
         case "acc_diemdanh": await handleCheckin(chatId, telegramId); break;
         case "acc_tichluynap": await handleAccumulatedDeposit(chatId, user); break;
         case "acc_hotro": await bot.sendMessage(chatId, `?? Hỗ Trợ\n🕐 24/7\n📱 Admin: @huybuwin\n💬 Group Tài Xỉu : https://t.me/xombaoref`); break;
@@ -3412,18 +3452,10 @@ export async function startBot(): Promise<TelegramBot | null> {
             if (d1Amount > MAX_BET) { try { await bot.sendMessage(chatId, `❕ Tối đa ${formatNumber(MAX_BET)}`, { reply_to_message_id: msg.message_id }); } catch {} return; }
           }
           if (dUser.balance < d1Amount) { try { await bot.sendMessage(chatId, `⛔ Không đủ số dư! Số dư: ${formatNumber(dUser.balance)}`, { reply_to_message_id: msg.message_id }); } catch {} return; }
-          const updD1 = db.prepare(
-            "UPDATE users SET balance = balance - ?, total_bet = total_bet + ?, today_bet = today_bet + ?, week_bet = week_bet + ? WHERE id = ? AND balance >= ?"
-          ).run(d1Amount, d1Amount, d1Amount, d1Amount, dUser.id, d1Amount);
-          if (!updD1.changes) {
-            const freshD1 = getUserByTelegramId(telegramId);
-            try { await bot.sendMessage(chatId, `⛔ Không đủ số dư! Số dư: ${formatNumber(freshD1?.balance ?? 0)}`, { reply_to_message_id: msg.message_id }); } catch {}
-            return;
-          }
-          const freshD1User = getUserByTelegramId(telegramId);
-          const d1NewBal = freshD1User?.balance ?? (dUser.balance - d1Amount);
+          const d1NewBal = dUser.balance - d1Amount;
+          db.prepare("UPDATE users SET balance=?, total_bet=total_bet+?, today_bet=today_bet+?, week_bet=week_bet+? WHERE id=?").run(d1NewBal, d1Amount, d1Amount, d1Amount, dUser.id);
           consumeWagerRequirement(dUser.id, d1Amount);
-          recordTransaction({ userId: dUser.id, type: "bet", amount: d1Amount, fee: 0, balanceBefore: d1NewBal + d1Amount, balanceAfter: d1NewBal, note: `Cược D${chosenNum} phiên #${session.sessionNumber}` });
+          recordTransaction({ userId: dUser.id, type: "bet", amount: d1Amount, fee: 0, balanceBefore: dUser.balance, balanceAfter: d1NewBal, note: `Cược D${chosenNum} phiên #${session.sessionNumber}` });
           const d1WasEmpty = !hasBets(session);
           session.dBets.set(dUser.id, { chosenNum, amount: d1Amount });
           if (d1WasEmpty && session.silent) {
@@ -3525,7 +3557,7 @@ export async function startBot(): Promise<TelegramBot | null> {
 
       // Keyboard menu buttons
       if (text === "🏛️ Tài Khoản") { resetState(telegramId); await sendAccountInfo(chatId, telegramId); return; }
-      if (text === "💴 Nạp Tiền") {
+      if (text === "💵 Nạp Tiền") {
         resetState(telegramId);
 await bot.sendMessage(chatId, `💳 *CHỌN MỆNH GIÁ NẠP TIỀN*
 
