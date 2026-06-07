@@ -22,7 +22,7 @@ const ADMIN_IDS = new Set([
 const BOT_NAME = "HQ88 VUA TRÒ CHƠI";
 const SUPPORT_ADMIN = "@huybuwin";
 
-const QR_IMAGE_PATH = path.join(__dirname, "..", "assets", "https://api.vietqr.io/image/970449-0344127655-HxJXGbk.jpg?accountName=VU%20BAN%20SUP");
+const QR_IMAGE_PATH = path.join(__dirname, "..", "assets", "http://mmovip247.online/upload/1780853604_7776471599.jpg");
 
 const GAME_DURATION_MS = 50_000;
 const WARN_40S_MS = 10_000;
