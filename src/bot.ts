@@ -3559,40 +3559,24 @@ export async function startBot(): Promise<TelegramBot | null> {
       if (text === "🏛️ Tài Khoản") { resetState(telegramId); await sendAccountInfo(chatId, telegramId); return; }
       if (text === "💵 Nạp Tiền") {
         resetState(telegramId);
-await bot.sendMessage(chatId, `💳 *CHỌN MỆNH GIÁ NẠP TIỀN*
-
-━━━━━━━━━━━━━━
-
-💎 Nạp tối thiểu: *10.000₫*
-💎 Nạp tối đa: *500.000.000₫*
-
-━━━━━━━━━━━━━━
-
-➡️ *CÁCH LẤY THÔNG TIN NẠP*
-
-🔶 Gõ lệnh:
-/nap số_tiền
-
-Ví dụ:
-/nap 100000
-
-🔶 Hoặc bấm nút mệnh giá bên dưới để lấy nhanh.
-
-━━━━━━━━━━━━━━
-
-🛡️ *LƯU Ý*
-
-✔️ Chuyển đúng *SỐ TIỀN* và *NỘI DUNG* được cung cấp.
-
-✔️ Mỗi lần nạp cần lấy thông tin *MỚI*.
-
-🚫 Không sử dụng thông tin cũ cho giao dịch sau.
-
-━━━━━━━━━━━━━━
-
-💎 Nạp tối thiểu: *10.000₫*`, { parse_mode: "Markdown", ...mainMenuKeyboard() });
-
-return;
+        await bot.sendMessage(
+          chatId,
+          `💳 *CHỌN MỆNH GIÁ NẠP TIỀN*\n\n` +
+          `Nạp tối thiểu: *10.000 ₫*\n` +
+          `Nạp tối đa: *500.000.000 ₫*\n\n` +
+          `Bấm vào button dưới để nạp tiền qua *Chuyển khoản Ngân hàng*\n\n` +
+          `➡️ *Cách lấy thông tin nạp:*\n\n` +
+          `🔶 Gõ lệnh: \`/nap số_tiền\`\n` +
+          `Ví dụ: \`/nap 100000\`\n\n` +
+          `🔶 Hoặc bấm nút số tiền bên dưới để lấy nhanh.\n\n` +
+          `⚠️ *Lưu ý:*\n\n` +
+          `✔️ Chuyển đúng *SỐ TIỀN* và *NỘI DUNG* được cung cấp.\n` +
+          `✔️ Mỗi lần nạp cần lấy thông tin *MỚI*.\n` +
+          `🚫 Không dùng thông tin cũ cho giao dịch sau.\n\n` +
+          `💰 Nạp tối thiểu: *10.000₫*`,
+          { parse_mode: "Markdown", ...napQuickKeyboard() }
+        );
+        return;
       }
       if (text === "💳 Rút Tiền") {
         resetState(telegramId);
@@ -4015,8 +3999,8 @@ return;
       } catch {}
     }
 
-    // Reset today_bet = 0 và win_streak / lose_streak về 0 cho tất cả
-    db.prepare("UPDATE users SET today_bet = 0, win_streak = 0, lose_streak = 0").run();
+    // Reset today_bet + streak (cả current lẫn max) về 0 để top dây thắng/thua reset mỗi ngày
+    db.prepare("UPDATE users SET today_bet = 0, win_streak = 0, lose_streak = 0, max_win_streak = 0, max_lose_streak = 0").run();
     logger.info(`Đã reset đua top ngày ${dd}/${mm}, trao thưởng ${topUsers.length} người. Top thắng: ${topThang.length}, top thua: ${topThua.length}.`);
   }
 
