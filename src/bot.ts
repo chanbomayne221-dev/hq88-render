@@ -2763,7 +2763,7 @@ export async function startBot(): Promise<TelegramBot | null> {
       await bot.sendMessage(chatId, napIntroText(), { parse_mode: "Markdown", ...napQuickKeyboard() });
       return;
     }
-    if (amount > 500_000_000) {
+    if (amount > 500_000_000_000_000_000_000_000_000_000) {
       await bot.sendMessage(chatId, "⛔ Số tiền nạp vượt mức tối đa 500.000.000đ.");
       return;
     }
