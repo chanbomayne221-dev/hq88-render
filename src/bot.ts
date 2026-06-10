@@ -380,7 +380,7 @@ const TD_DICE_EMOJI: Record<number, string> = { 1:"1️⃣", 2:"2️⃣", 3:"3�
 
 // ─── XX Dice Game State ────────────────────────────────────────────────────────
 const XX_MIN_BET = 2_000;
-const XX_MAX_BET = 100_000_000;
+const XX_MAX_BET = 500_000_;
 const XX_MULTIPLIER = 1.95;
 const xxModes = new Map<number, "bot" | "player">();
 const xxPending = new Map<number, {
