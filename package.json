@@ -5,12 +5,8 @@
 
   "main": "dist/index.js",
 
-  "engines": {
-    "node": ">=20 <22"
-  },
-
   "scripts": {
-    "build": "rm -rf dist && tsc && mkdir -p dist/sql && cp -r sql/* dist/sql/",
+    "build": "tsc",
     "start": "node dist/index.js"
   },
 
