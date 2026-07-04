@@ -7,9 +7,12 @@
 //   db.prepare(sql).all(...args)  →  row[]
 //   db.exec(sqlMultiStatement)    →  void
 // ─────────────────────────────────────────────────────────────────────────
+
 import path from "path";
 import { createSyncFn } from "synckit";
 import { logger } from "./logger";
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const workerPath = path.join(__dirname, "db.worker.js");
 
@@ -27,12 +30,17 @@ function prepare(sql: string) {
   return {
     run(...args: any[]) {
       const r = callSync({ op: "run", sql, params: args });
-      return { changes: r.changes ?? 0, lastInsertRowid: r.lastInsertRowid };
+      return {
+        changes: r.changes ?? 0,
+        lastInsertRowid: r.lastInsertRowid,
+      };
     },
+
     get(...args: any[]) {
       const r = callSync({ op: "get", sql, params: args });
       return r.row;
     },
+
     all(...args: any[]) {
       const r = callSync({ op: "all", sql, params: args });
       return r.rows ?? [];
