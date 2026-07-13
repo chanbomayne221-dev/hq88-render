@@ -143,12 +143,22 @@ function syncVipLevel(u: any) {
 }
 
 function getOrCreateUser(telegramId: number, firstName?: string, username?: string) {
-  const res = db.prepare(`INSERT INTO users (telegram_id, first_name, username, balance) VALUES (?, ?, ?, ?) ON CONFLICT (telegram_id) DO NOTHING`).run(telegramId, firstName ?? null, username ?? null, SIGNUP_BONUS);
-  if ((res as any).changes > 0) {
-    const u = db.prepare("SELECT id, balance FROM users WHERE telegram_id = ?").get(telegramId) as any;
+  // Gộp INSERT/SELECT thành 1 roundtrip. `xmax = 0` ở PostgreSQL cho biết
+  // dòng vừa được INSERT (không phải UPDATE do CONFLICT) → phát bonus 1 lần.
+  const u = db.prepare(
+    `INSERT INTO users (telegram_id, first_name, username, balance)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (telegram_id) DO UPDATE
+       SET first_name = COALESCE(EXCLUDED.first_name, users.first_name),
+           username   = COALESCE(EXCLUDED.username, users.username)
+     RETURNING *, (xmax = 0) AS __inserted`
+  ).get(telegramId, firstName ?? null, username ?? null, SIGNUP_BONUS) as any;
+  if (u?.__inserted) {
     recordTransaction({ userId: u.id, type: "gift", amount: SIGNUP_BONUS, fee: 0, balanceBefore: 0, balanceAfter: SIGNUP_BONUS, note: "Tặng 2.000 khi đăng ký" });
+    u.__was_new = true;
   }
-  return syncVipLevel(db.prepare("SELECT * FROM users WHERE telegram_id = ?").get(telegramId) as any);
+  if (u) delete u.__inserted;
+  return syncVipLevel(u);
 }
 
 function getUserByTelegramId(telegramId: number) {
@@ -251,6 +261,32 @@ function updateVipLevel(user: any) {
 
 function isAdmin(telegramId: number) { return ADMIN_IDS.has(telegramId); }
 
+// ─── Auto duyệt nạp (do admin bật qua /admin) ───────────────────────────────
+// 0 = tắt. Khi > 0, mọi lệnh /nap tạo yêu cầu sẽ tự động duyệt sau N giây.
+let autoApproveDepositSec = 0;
+
+// ─── Chống spam: giới hạn số message/callback mỗi user trong cửa sổ ngắn ────
+// Cho phép burst nhẹ, sau đó chặn nếu vượt ngưỡng.
+const SPAM_WINDOW_MS = 2000;
+const SPAM_MAX_HITS  = 8;   // tối đa 8 lệnh trong 2s
+const spamHits = new Map<number, { count: number; resetAt: number; warnedAt: number }>();
+function isSpamming(userId: number): boolean {
+  const now = Date.now();
+  const rec = spamHits.get(userId);
+  if (!rec || rec.resetAt < now) {
+    spamHits.set(userId, { count: 1, resetAt: now + SPAM_WINDOW_MS, warnedAt: 0 });
+    return false;
+  }
+  rec.count++;
+  if (rec.count > SPAM_MAX_HITS) return true;
+  return false;
+}
+// Dọn map định kỳ để không rò rỉ bộ nhớ.
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of spamHits) if (v.resetAt < now - 60_000) spamHits.delete(k);
+}, 60_000).unref?.();
+
 function adminMenuKeyboard() {
   return {
     inline_keyboard: [
@@ -264,6 +300,7 @@ function adminMenuKeyboard() {
       [{ text: "📂 Lịch sử cược phiên", callback_data: "adm_session_bets" }, { text: "📋 DS cược phiên mới nhất", callback_data: "adm_bets_latest" }],
       [{ text: "♻️ Reset tài khoản user", callback_data: "adm_prompt_reset_user" }],
       [{ text: "👑 Bật/Tắt Bot Ảo", callback_data: "adm_toggle_fakebot" }],
+      [{ text: "🤖 Auto duyệt nạp", callback_data: "adm_prompt_autoapprove" }],
     ],
   };
 }
@@ -483,6 +520,47 @@ function hasBets(session: any) {
 // ─── Bot instance (set in startBot) ──────────────────────────────────────────
 let bot: TelegramBot;
 let BOT_USERNAME = "";
+
+// ─── Duyệt nạp (dùng chung cho admin bấm nút & auto duyệt) ──────────────────
+async function approveDeposit(depId: number, adminChatId?: number, adminMessageId?: number) {
+  const dep = db.prepare("SELECT * FROM pending_deposits WHERE id = ?").get(depId) as any;
+  if (!dep || dep.status !== "pending") return false;
+  const u = db.prepare("SELECT * FROM users WHERE id = ?").get(dep.user_id) as any;
+  if (!u) return false;
+  const bonus = Math.floor(dep.amount * 0.03);
+  const totalCredit = dep.amount + bonus;
+  const isFirstDeposit = u.total_deposit === 0;
+  const wipedAmount = isFirstDeposit ? u.balance : 0;
+  const baseBalance = isFirstDeposit ? 0 : u.balance;
+  const newBal = baseBalance + totalCredit;
+  if (isFirstDeposit && wipedAmount > 0) {
+    recordTransaction({ userId: u.id, type: "adjust", amount: wipedAmount, fee: 0, balanceBefore: u.balance, balanceAfter: 0, note: "Trừ số dư trước nạp lần đầu" });
+  }
+  db.prepare("UPDATE users SET balance = ?, total_deposit = ? WHERE id = ?").run(newBal, u.total_deposit + dep.amount, u.id);
+  addWagerRequirement(u.id, dep.amount);
+  recordTransaction({ userId: u.id, type: "deposit", amount: dep.amount, fee: 0, balanceBefore: baseBalance, balanceAfter: baseBalance + dep.amount, note: "Nạp tiền (user yêu cầu)" });
+  if (bonus > 0) recordTransaction({ userId: u.id, type: "gift", amount: bonus, fee: 0, balanceBefore: baseBalance + dep.amount, balanceAfter: newBal, note: "Khuyến mãi nạp 3%" });
+  if (u.referrer_id && !u.first_deposit_done) {
+    const refBonus = Math.floor(dep.amount * 0.03);
+    if (refBonus > 0) addReferralCommission(u.referrer_id, refBonus, `Hoa hồng 3% nạp đầu từ ${u.telegram_id}`);
+    db.prepare("UPDATE users SET first_deposit_done=1 WHERE id=?").run(u.id);
+  }
+  if ((u.total_deposit + dep.amount) >= 20_000) {
+    db.prepare("UPDATE users SET first_deposit_done=1 WHERE id=?").run(u.id);
+  }
+  updateVipLevel({ ...u, total_deposit: u.total_deposit + dep.amount });
+  db.prepare("UPDATE pending_deposits SET status='approved', handled_at=to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS') WHERE id=?").run(depId);
+  const wipedNote = (isFirstDeposit && wipedAmount > 0) ? `\n🛡️ Số dư cũ trước khi nạp đã bị trừ: -${formatNumber(wipedAmount)}` : "";
+  try { await bot.sendMessage(dep.telegram_id, `✔️ Ting Ting\n💎 Nạp tiền thành công ${formatNumber(dep.amount)}\n🎁Khuyến mãi nạp 3%: ${formatNumber(bonus)}${wipedNote}\nSố dư hiện tại: ${formatNumber(newBal)}`); } catch {}
+  const maskedId = `****${String(dep.telegram_id).slice(-5)}`;
+  for (const gid of enabledGroups) { try { await bot.sendMessage(gid, `*Người chơi ${maskedId}*\n*✔️ Nạp tiền thành công ${formatNumber(dep.amount)}*\n*🎁Khuyến mãi nạp 3%: +${formatNumber(bonus)}*`, { parse_mode: "Markdown" }); } catch {} }
+  if (adminChatId && adminMessageId) {
+    try { await bot.editMessageText(`✔️ ĐÃ DUYỆT nạp *${formatNumber(dep.amount)}* cho Telegram ID ${dep.telegram_id}`, { chat_id: adminChatId, message_id: adminMessageId, parse_mode: "Markdown" }); } catch {}
+  } else {
+    for (const adminId of ADMIN_IDS) { try { await bot.sendMessage(adminId, `🤖 *AUTO DUYỆT NẠP*\n💎 ${formatNumber(dep.amount)} cho Telegram ID ${dep.telegram_id}\n💳 Số dư mới: ${formatNumber(newBal)}`, { parse_mode: "Markdown" }); } catch {} }
+  }
+  return true;
+}
 
 // ─── Session Lifecycle ────────────────────────────────────────────────────────
 // ─── Auto-Bet Scheduler ───────────────────────────────────────────────────────
@@ -2403,31 +2481,11 @@ export async function startBot(): Promise<TelegramBot | null> {
     try {
       const chatId = msg.chat.id;
       const telegramId = msg.from!.id;
-      const isNew = !getUserByTelegramId(telegramId);
-      const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
+      // getOrCreateUser giờ chỉ tốn 1 roundtrip DB và trả về `__inserted`
+      // để biết đây có phải user mới không.
+      const user = getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username) as any;
+      const isNew = !!user?.__was_new;
       const refArg = match?.[1]?.trim();
-      if (isNew && refArg && /^\d+$/.test(refArg)) {
-        const refTelegramId = parseInt(refArg);
-        if (refTelegramId !== telegramId) {
-          const refUser = getUserByTelegramId(refTelegramId);
-          if (refUser && !user.referrer_id) {
-            db.prepare("UPDATE users SET referrer_id=? WHERE id=?").run(refUser.id, user.id);
-            // Thông báo cho người giới thiệu
-            const newName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ") || msg.from?.username || "Ẩn danh";
-            const refererTgId = refUser.telegram_id;
-            try {
-              await bot.sendMessage(
-                refererTgId,
-                `🥂 *Có người tham gia qua link giới thiệu của bạn!*\n\n` +
-                `🎩 Tên: *${newName}*\n` +
-                `🆔 Telegram ID: \`${telegramId}\`\n\n` +
-                `💎 Bạn sẽ nhận hoa hồng mỗi khi họ nạp & đặt cược!`,
-                { parse_mode: "Markdown" }
-              );
-            } catch {}
-          }
-        }
-      }
       if (!isPrivate(msg)) return;
       resetState(telegramId);
       if (user.is_blocked) {
@@ -2435,10 +2493,37 @@ export async function startBot(): Promise<TelegramBot | null> {
         return;
       }
       const welcomeBonus = isNew ? `\n\n🎁 Bạn vừa nhận được *${formatNumber(SIGNUP_BONUS)}* tiền thưởng đăng ký!` : "";
-      await bot.sendMessage(chatId,
-        `🎰 Chào mừng đến với ${BOT_NAME}!${welcomeBonus}\n LƯU Ý ĐÂY LÀ BOT GIẢI TRÍ KHÔNG THỂ RÚT TIỀN,KHÔNG NÊN TẠO LỆNH NẠP VÀ CHUYỂN TIỀN VÀO, MỌI LỆNH NẠP TIỀN SẼ ĐƯỢC DUYỆT SAU 5S \n\nNhấn 🏛️ Tài Khoản để xem thông tin tài khoản của bạn.\nROOM TÀI XỈU SĂN HŨ https://t.me/xombaoref`,
+      const autoNote = autoApproveDepositSec > 0
+        ? `MỌI LỆNH NẠP TIỀN SẼ ĐƯỢC DUYỆT SAU ${autoApproveDepositSec}S`
+        : `MỌI LỆNH NẠP TIỀN CẦN CHỜ ADMIN DUYỆT`;
+      // Gửi welcome ngay – không block bởi các thao tác referral phía dưới.
+      bot.sendMessage(chatId,
+        `🎰 Chào mừng đến với ${BOT_NAME}!${welcomeBonus}\n LƯU Ý ĐÂY LÀ BOT GIẢI TRÍ KHÔNG THỂ RÚT TIỀN,KHÔNG NÊN TẠO LỆNH NẠP VÀ CHUYỂN TIỀN VÀO, ${autoNote} \n\nNhấn 🏛️ Tài Khoản để xem thông tin tài khoản của bạn.\nROOM TÀI XỈU SĂN HŨ https://t.me/xombaoref`,
         { parse_mode: "Markdown", ...mainMenuKeyboard() }
-      );
+      ).catch((e) => console.error("welcome send err:", e));
+
+      // Referral xử lý sau (không chặn phản hồi welcome).
+      if (isNew && refArg && /^\d+$/.test(refArg)) {
+        const refTelegramId = parseInt(refArg);
+        if (refTelegramId !== telegramId) {
+          setImmediate(() => {
+            try {
+              const refUser = getUserByTelegramId(refTelegramId);
+              if (refUser && !user.referrer_id) {
+                db.prepare("UPDATE users SET referrer_id=? WHERE id=?").run(refUser.id, user.id);
+                const newName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ") || msg.from?.username || "Ẩn danh";
+                bot.sendMessage(refUser.telegram_id,
+                  `🥂 *Có người tham gia qua link giới thiệu của bạn!*\n\n` +
+                  `🎩 Tên: *${newName}*\n` +
+                  `🆔 Telegram ID: \`${telegramId}\`\n\n` +
+                  `💎 Bạn sẽ nhận hoa hồng mỗi khi họ nạp & đặt cược!`,
+                  { parse_mode: "Markdown" }
+                ).catch(() => {});
+              }
+            } catch (e) { console.error("referral err:", e); }
+          });
+        }
+      }
     } catch (e) { console.error(e); }
   });
 
@@ -2819,6 +2904,12 @@ export async function startBot(): Promise<TelegramBot | null> {
         );
       } catch {}
     }
+    // Auto duyệt sau X giây nếu admin đã bật
+    if (autoApproveDepositSec > 0) {
+      const delayMs = autoApproveDepositSec * 1000;
+      setTimeout(() => { approveDeposit(depId as number).catch((e) => console.error("auto approve error:", e)); }, delayMs);
+      try { await bot.sendMessage(chatId, `🤖 Hệ thống sẽ tự động duyệt lệnh nạp này sau *${autoApproveDepositSec}* giây.`, { parse_mode: "Markdown" }); } catch {}
+    }
   }
 
   bot.onText(/\/nap(?:\s+(\d+))?/, async (msg, match) => {
@@ -2962,7 +3053,9 @@ export async function startBot(): Promise<TelegramBot | null> {
     const chatId = query.message!.chat.id;
     const telegramId = query.from.id;
     const data = query.data ?? "";
-    await bot.answerCallbackQuery(query.id);
+    // Trả lời callback ngay (không await) để Telegram không giữ spinner.
+    bot.answerCallbackQuery(query.id).catch(() => {});
+    if (!isAdmin(telegramId) && isSpamming(telegramId)) return;
 
     if (query.message!.chat.type !== "private") return;
 
@@ -3078,6 +3171,14 @@ export async function startBot(): Promise<TelegramBot | null> {
         if (data === "adm_prompt_clearwager") { setState(telegramId, { step: "adm_clearwager_id" }); await bot.sendMessage(chatId, "🎟️ Nhập ID user muốn miễn vòng cược:"); return; }
         if (data === "adm_prompt_broadcast") { setState(telegramId, { step: "adm_broadcast_text" }); await bot.sendMessage(chatId, "📯 Nhập nội dung thông báo muốn gửi tới tất cả user:"); return; }
         if (data === "adm_prompt_reset_user") { setState(telegramId, { step: "adm_reset_user_id" }); await bot.sendMessage(chatId, "♻️ Nhập Telegram ID hoặc ID nội bộ của user muốn reset:"); return; }
+        if (data === "adm_prompt_autoapprove") {
+          setState(telegramId, { step: "adm_autoapprove_sec" });
+          await bot.sendMessage(chatId,
+            `🤖 *AUTO DUYỆT NẠP*\n\nTrạng thái hiện tại: ${autoApproveDepositSec > 0 ? `BẬT (${autoApproveDepositSec}s)` : "TẮT"}\n\nNhập số *giây* trì hoãn trước khi tự duyệt lệnh /nap.\nNhập *0* để tắt.`,
+            { parse_mode: "Markdown" }
+          );
+          return;
+        }
         const admResetConfirm = data.match(/^adm_reset_confirm_(\d+)$/);
         if (admResetConfirm) {
           const uid = parseInt(admResetConfirm[1]);
@@ -3347,35 +3448,7 @@ export async function startBot(): Promise<TelegramBot | null> {
         if (!dep) { await bot.sendMessage(chatId, "⛔ Không tìm thấy yêu cầu!"); return; }
         if (dep.status !== "pending") { await bot.sendMessage(chatId, "🛡️ Yêu cầu này đã được xử lý rồi!"); return; }
         if (data.startsWith("dep_approve_")) {
-          const u = db.prepare("SELECT * FROM users WHERE id = ?").get(dep.user_id) as any;
-          const bonus = Math.floor(dep.amount * 0.03);
-          const totalCredit = dep.amount + bonus;
-          const isFirstDeposit = u.total_deposit === 0;
-          const wipedAmount = isFirstDeposit ? u.balance : 0;
-          const baseBalance = isFirstDeposit ? 0 : u.balance;
-          const newBal = baseBalance + totalCredit;
-          if (isFirstDeposit && wipedAmount > 0) {
-            recordTransaction({ userId: u.id, type: "adjust", amount: wipedAmount, fee: 0, balanceBefore: u.balance, balanceAfter: 0, note: "Trừ số dư trước nạp lần đầu" });
-          }
-          db.prepare("UPDATE users SET balance = ?, total_deposit = ? WHERE id = ?").run(newBal, u.total_deposit + dep.amount, u.id);
-          addWagerRequirement(u.id, dep.amount);
-          recordTransaction({ userId: u.id, type: "deposit", amount: dep.amount, fee: 0, balanceBefore: baseBalance, balanceAfter: baseBalance + dep.amount, note: "Nạp tiền (user yêu cầu)" });
-          if (bonus > 0) recordTransaction({ userId: u.id, type: "gift", amount: bonus, fee: 0, balanceBefore: baseBalance + dep.amount, balanceAfter: newBal, note: "Khuyến mãi nạp 3%" });
-          if (u.referrer_id && !u.first_deposit_done) {
-            const refBonus = Math.floor(dep.amount * 0.03);
-            if (refBonus > 0) addReferralCommission(u.referrer_id, refBonus, `Hoa hồng 3% nạp đầu từ ${u.telegram_id}`);
-            db.prepare("UPDATE users SET first_deposit_done=1 WHERE id=?").run(u.id);
-          }
-          if ((u.total_deposit + dep.amount) >= 20_000) {
-            db.prepare("UPDATE users SET first_deposit_done=1 WHERE id=?").run(u.id);
-          }
-          updateVipLevel({ ...u, total_deposit: u.total_deposit + dep.amount });
-          db.prepare("UPDATE pending_deposits SET status='approved', handled_at=to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS') WHERE id=?").run(depId);
-          try { await bot.editMessageText(`✔️ ĐÃ DUYỆT nạp *${formatNumber(dep.amount)}* cho Telegram ID ${dep.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
-          const wipedNote = (isFirstDeposit && wipedAmount > 0) ? `\n🛡️ Số dư cũ trước khi nạp đã bị trừ: -${formatNumber(wipedAmount)}` : "";
-          try { await bot.sendMessage(dep.telegram_id, `✔️ Ting Ting\n💎 Nạp tiền thành công ${formatNumber(dep.amount)}\n🎁Khuyến mãi nạp 3%: ${formatNumber(bonus)}${wipedNote}\nSố dư hiện tại: ${formatNumber(newBal)}`); } catch {}
-          const maskedId = `****${String(dep.telegram_id).slice(-5)}`;
-          for (const gid of enabledGroups) { try { await bot.sendMessage(gid, `*Người chơi ${maskedId}*\n*✔️ Nạp tiền thành công ${formatNumber(dep.amount)}*\n*🎁Khuyến mãi nạp 3%: +${formatNumber(bonus)}*`, { parse_mode: "Markdown" }); } catch {} }
+          await approveDeposit(depId, chatId, query.message!.message_id);
         } else {
           db.prepare("UPDATE pending_deposits SET status='rejected', handled_at=to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS') WHERE id=?").run(depId);
           try { await bot.editMessageText(`⛔ ĐÃ TỪ CHỐI nạp *${formatNumber(dep.amount)}* của Telegram ID ${dep.telegram_id}`, { chat_id: chatId, message_id: query.message!.message_id, parse_mode: "Markdown" }); } catch {}
@@ -3411,6 +3484,8 @@ export async function startBot(): Promise<TelegramBot | null> {
     const chatId = msg.chat.id;
     const telegramId = msg.from!.id;
     const text = normalizeIncomingText(msg.text);
+    // Anti-spam: drop sớm khi user gửi liên tục quá ngưỡng (bỏ qua admin).
+    if (!isAdmin(telegramId) && isSpamming(telegramId)) return;
 
     try {
       if (msg.chat.type !== "private") {
@@ -3810,6 +3885,19 @@ export async function startBot(): Promise<TelegramBot | null> {
             return;
           }
           case "adm_broadcast_text": { const users = db.prepare("SELECT telegram_id FROM users WHERE is_blocked = 0").all() as any[]; let sent = 0, failed = 0; await bot.sendMessage(chatId, `📯 Đang gửi đến ${users.length} user...`); for (const u of users) { try { await bot.sendMessage(u.telegram_id, `📯 *THÔNG BÁO TỪ HỆ THỐNG*\n\n${text}`, { parse_mode: "Markdown" }); sent++; } catch { failed++; } await sleep(50); } resetState(telegramId); await bot.sendMessage(chatId, `✔️ Đã gửi: ${sent} | ⛔ Thất bại: ${failed}`, { reply_markup: adminMenuKeyboard() }); return; }
+          case "adm_autoapprove_sec": {
+            const sec = parseInt(text.trim());
+            if (isNaN(sec) || sec < 0 || sec > 3600) { await bot.sendMessage(chatId, "❕ Nhập số nguyên 0–3600 (giây). Nhập lại:"); return; }
+            autoApproveDepositSec = sec;
+            resetState(telegramId);
+            await bot.sendMessage(chatId,
+              sec === 0
+                ? `⛔ Đã *TẮT* auto duyệt nạp.`
+                : `✔️ Đã *BẬT* auto duyệt nạp: mọi lệnh /nap sẽ tự duyệt sau *${sec}* giây.`,
+              { parse_mode: "Markdown", reply_markup: adminMenuKeyboard() }
+            );
+            return;
+          }
         }
         return;
       }
