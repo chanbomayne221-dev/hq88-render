@@ -28,7 +28,7 @@ const GAME_DURATION_MS = 50_000;
 const WARN_40S_MS = 10_000;
 const WARN_20S_MS = 30_000;
 const MIN_BET = 2_000;
-const MAX_BET = 10_000_000_000_000_000_000;
+const MAX_BET = 5_000_000;
 
 // ─── Database ──────────────────────────────────────────────────────────────
 // Schema được khởi tạo bởi sql/schema.sql (tự chạy trong db.worker.ts).
